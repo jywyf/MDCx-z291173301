@@ -4788,6 +4788,11 @@ class MyMAinWindow(QMainWindow):
         try:
             self.save_config()
             self.load_config()  # 确保界面显示和实际配置一致
+            # 重建网络派生对象：AsyncWebClient 的重试/超时/代理在构造时固化，
+            # 仅改 manager.config 不会生效（如检测网络仍用旧重试次数）。
+            # _replace_config 原子切换新客户端，旧客户端由持有方租约保护、
+            # 空闲后关闭（检测进行中点保存不断连）。
+            manager._replace_config(manager.config)
         except Exception:
             error = traceback.format_exc()
             signal_qt.show_traceback_log(error)

@@ -936,9 +936,10 @@ def load_config(self: "MyMAinWindow"):
         # 超时时间
         self.Ui.horizontalSlider_timeout.setValue(int(manager.config.timeout))
         self.Ui.lcdNumber_timeout.display(int(manager.config.timeout))
-        # 重试次数
-        self.Ui.horizontalSlider_retry.setValue(int(manager.config.retry))
-        self.Ui.lcdNumber_retry.display(int(manager.config.retry))
+        # 重试次数（滑动条 1~3，旧配置越界值钳位，保证检测网络显示与请求一致）
+        retry_value = min(max(int(manager.config.retry), 1), 3)
+        self.Ui.horizontalSlider_retry.setValue(retry_value)
+        self.Ui.lcdNumber_retry.display(retry_value)
 
         # site config
         site = self.Ui.comboBox_custom_website.currentData() or self.Ui.comboBox_custom_website.currentText()

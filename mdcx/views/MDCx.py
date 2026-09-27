@@ -10313,7 +10313,7 @@ class Ui_MDCx(object):
         self.horizontalSlider_retry.setMaximumSize(QtCore.QSize(66666, 30))
         self.horizontalSlider_retry.setMouseTracking(False)
         self.horizontalSlider_retry.setLayoutDirection(QtCore.Qt.LayoutDirection.LeftToRight)
-        self.horizontalSlider_retry.setMinimum(2)
+        self.horizontalSlider_retry.setMinimum(1)
         self.horizontalSlider_retry.setMaximum(3)
         self.horizontalSlider_retry.setPageStep(1)
         self.horizontalSlider_retry.setProperty("value", 3)
