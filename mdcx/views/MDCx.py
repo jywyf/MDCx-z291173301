@@ -8310,7 +8310,7 @@ class Ui_MDCx(object):
         self.scrollAreaWidgetContents_nfo.setGeometry(QtCore.QRect(0, 0, 796, 1200))
         self.scrollAreaWidgetContents_nfo.setObjectName("scrollAreaWidgetContents_nfo")
         self.groupBox_81 = QtWidgets.QGroupBox(parent=self.scrollAreaWidgetContents_nfo)
-        self.groupBox_81.setGeometry(QtCore.QRect(30, 20, 715, 1071))
+        self.groupBox_81.setGeometry(QtCore.QRect(30, 20, 701, 1071))
         self.groupBox_81.setMinimumSize(QtCore.QSize(200, 0))
         self.groupBox_81.setObjectName("groupBox_81")
         self.layoutWidget_10 = QtWidgets.QWidget(parent=self.groupBox_81)

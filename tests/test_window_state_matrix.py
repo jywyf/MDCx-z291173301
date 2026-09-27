@@ -1751,16 +1751,17 @@ def test_nfo_field_tips_stays_inside_group_box(win, app):
 
 
 def test_nfo_groupbox_resyncs_after_stale_stretch(win, app):
-    """设置-NFO：级联中途定格的 stale extra 必须被 trailing 重同步收敛。
+    """设置-NFO：组框右缘看齐水印/演员组（左缘 x=30 不动）。
 
-    verify_gb 血案：tab 切换时 showEvent 的 wide-sync 跑在级联中途
-    （视口 805），落定到 819 后再无事件触发它，groupBox_81 带着 stale
-    extra 定格（718+9=727），与水印组恒差 11px。_sync_page_layouts 在
-    NFO 控制器量测前显式重跑 scrollArea_13 的宽幅同步，保证终态几何。
-    本测试用故障注入确定性复现 stale（手动改错组宽 64px），与时序无关：
-    修复前 _sync_page_layouts 从不碰组宽→保持错误；修复后→收敛回诚实值
-    （718 + vp - 796），且比水印组公式诚实值多 3px（用户要求 NFO 右缘
-    在 1-5px 范围内更靠外）。
+    用户截图：NFO 组框左右边界宽度大于水印/演员组，要求只把 NFO 右边界
+    向左收到一样宽，水印/演员不做任何修改，面板内控件位置不变。
+    结论（清理式）：设计宽回到 701（= 水印/演员），差值 diff=Δvp 裸奔；
+    动态控制器已删除（它与 wide-sync 同构，设计 701 时纯冗余，且曾因
+    tab_7(837)/内部 stacked(833) 框 confusion 用错边距 65 overshoot 到 742）。
+    自然 wide-sync（组宽=701+extra）在两视口相等时两组天然等宽。
+    本测试故障注入（改窄 64px）后断言收敛到诚实公式 701+(视口-设计宽)
+    （全实测值，无魔法数），并跨页黑盒锁死两组严格等宽
+    （1089/1900；700 挤压地板舍入允许 ±3）。
     """
     ui = win.Ui
     gb81 = ui.groupBox_81
@@ -1775,33 +1776,37 @@ def test_nfo_groupbox_resyncs_after_stale_stretch(win, app):
         app.processEvents()
 
     win.show()
-    for w in (1089, 1900):
+    for w in (700, 1089, 1900):
         win.resize(w, 900)
         goto_tab_by_box(gb81, "groupBox_81")
         app.processEvents()
-        sc13 = ui.scrollArea_13
         before = (gb81.x(), gb81.y(), gb81.height())
-        # 故障注入：模拟 stale stretch（比诚实值窄 64px）
-        # 收敛环：sync 自身副作用（内容最小尺寸→滚动条→视口）要到 pump 后
-        # 才落定，单遍永远慢一拍；跨 beats 重跑至收敛（至多 3 轮），
-        # 首轮即收敛时直接退出。修复前从不碰组宽→永远不收敛。
+        # 故障注入：模拟 stale stretch（改窄 64px），与时序无关。
+        # 自然 wide-sync（+trailing 重跑）把它收敛回诚实公式，全实测值。
+        # 收敛环：跨 beats 重跑至收敛（至多 3 轮），首轮即收敛时直接退出。
         gb81.resize(gb81.width() - 64, gb81.height())
         app.processEvents()
+        sc13 = ui.scrollArea_13
         for _ in range(3):
             win._sync_page_layouts()
             app.processEvents()
             vp = sc13.viewport().width()
-            if gb81.width() == 715 + (vp - 796):
+            dw = sc13.widget()._wide_children_design_width
+            if gb81.width() == max(701 + (vp - dw), 701 // 2):
                 break
         vp = sc13.viewport().width()
-        assert gb81.width() == 715 + (vp - 796), (
-            f"{w}宽 trailing 未收敛: 组宽={gb81.width()} 诚实值={715 + (vp - 796)}(vp={vp})"
+        dw = sc13.widget()._wide_children_design_width
+        assert gb81.width() == max(701 + (vp - dw), 701 // 2), (
+            f"{w}宽 组框未收敛到诚实公式: 组宽={gb81.width()} 诚实值={max(701 + (vp - dw), 701 // 2)}(vp={vp},dw={dw})"
         )
         assert (gb81.x(), gb81.y(), gb81.height()) == before, f"{w}宽 组位移或变形"
-        # 水印组公式诚实 + 两视口相等时两组看齐（用户原诉求）
+        # 跨页黑盒锁死用户诉求：切水印页实测兄弟组宽（全实测值，无魔法数）。
+        # NFO 页休眠后组宽冻结（控制器守卫跳过），读到的正是收敛终态。
         goto_tab_by_box(gb31, "groupBox_31")
-        app.processEvents()
-        vp_wm = ui.scrollArea_4.viewport().width()
-        assert gb31.width() == 701 + (vp_wm - 782), f"{w}宽 水印组不诚实"
-        if vp == vp_wm:
-            assert gb81.width() == gb31.width(), f"{w}宽 两组未看齐: nfo={gb81.width()} 水印={gb31.width()}"
+        for _ in range(3):
+            win._sync_page_layouts()
+            app.processEvents()
+        if w >= 1089:
+            assert gb81.width() == gb31.width(), f"{w}宽 两组不等宽: nfo={gb81.width()} 水印={gb31.width()}"
+        else:
+            assert abs(gb81.width() - gb31.width()) <= 3, f"{w}宽 两组差超3px: nfo={gb81.width()} 水印={gb31.width()}"
