@@ -1,6 +1,9 @@
 # Changelog
 
-## v2.1.4 (2026-09-26)
+## v2.1.4 (2026-09-27)
+
+- **重试次数滑动条放开到 1~3、保存配置即重建网络客户端**：`horizontalSlider_retry` 最小值 2 → 1（最大值确认本来就是 3，默认值 3 不变，`MDCx.ui` 与 `MDCx.py` 同改）；`load_config` 加载时把重试值钳位到 [1,3]，旧配置越界值进不了界面与检测显示。另修复保存不断连但不生效的问题：此前 `save_config` 只改 `manager.config` 内存值 + 落盘，而 `AsyncWebClient` 的重试/超时/代理在构造时固化，检测网络实际仍用旧值（表头数字与实际行为脱节，需重启才生效）。现保存按钮处理在 `save/load_config` 后调 `manager._replace_config(manager.config)` 原子切换新客户端，旧客户端由持有方租约保护、空闲后关闭（检测进行中点保存不断连）；改完重试条点保存，下次检测即用新次数。超时滑动条无需改动：诊断项每次请求显式传 `timeout=_diagnostic_timeout()`（实时读配置，已实测 30/10/5 逐一对应），`test_ui_structure`（含 `.ui`→`.py` 同步）15 项 + `test_network_check` 等 94 项全过
+- **版本号四处对齐到 2.1.4**：`pyproject.toml` 由 2.1.3 升到 2.1.4，与 `VERSION_NAME` / `LOCAL_VERSION` / changelog 首段一致，`test_version_consistency` 全过
 
 - **Amazon 封面下载改请求 SL2560 原图变体（对齐 mdcx-diy-main 实际下载尺寸）**：此前缓存命中走 tenhow 图床直连（约 1055×1500），且 `_convert_to_target_size` 默认转 SL1500、输出非标准的点号式后缀（`.SL1500.`），同是 SNOS-447（ASIN `B0HDYHZ7MX`）只能下到 1055×1500/147KB，而 diy 下到 1778×2529/340KB。现删除 tenhow 探测分支（`TENHOW_IMAGE_URL_TEMPLATE` / `_probe_tenhow_image`），缓存命中直接返回库内 `poster_url`；默认目标尺寸改 `SL1500` → `SL2560`，输出修正为 Amazon 官方下划线式 `._SL2560_.jpg`（已实测同图 `._SL2560_.jpg` 返回 1778×2529/349028B，与 diy 截图逐字节量级一致）。`_normalize_amazon_image_url` 重写：兼容剥离 `._AC_UL320_.` / `._SL1500_.` / 点号式 `.SL1500.` / 无后缀原图四种形态后统一重加，库内历史旧后缀行下次缓存命中自动升级、无需重新搜索；非 Amazon 链接原样返回，显式 `target_size` 参数保留。`tests/test_amazon_trusted_read.py` 注释同步（库命中 reason 只剩 `cache`）。回归：`test_amazon_trusted_read` + `test_amazon_database` 18 项全过；下载规范见 `DEVELOPMENT.md`「Amazon 集成」
 
