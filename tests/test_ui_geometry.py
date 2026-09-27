@@ -264,9 +264,30 @@ def _ui_cells(ui_path: str, layout_name: str) -> dict[tuple[int, int], list[str]
             depth += 1
     seg = text[start:end]
     cells: dict[tuple[int, int], list[str]] = {}
-    for it in re.finditer(r'<item\s+row="(\d+)"\s+column="(\d+)"[^>]*>(.*?)</item>', seg, re.S):
-        row, col = int(it.group(1)), int(it.group(2))
-        body = it.group(3)
+    # 逐 <item> 块扫描必须带嵌套深度：外层 item 内嵌子 layout 时，非贪婪正则会在
+    # 子 layout 第一个 </item> 处截断，导致子布局的行/列被算到父 grid 头上
+    # （NFO 外层 gridLayout_40 内嵌 gridLayout_66 后暴露的假阳性：父 grid 的
+    # row2col0/row3col0 误收了子布局的演员/写入男女演员复选框）。带深度扫描后
+    # 每个外层 item 的 body 完整，子布局自己的 item 仍由它自己的轮次检查。
+    depth = 0
+    open_tok = None
+    for tok in re.finditer(r"<item\b([^>]*)>|</item>", seg):
+        if tok.group(0) != "</item>":
+            depth += 1
+            if depth == 1:
+                open_tok = tok
+            continue
+        depth -= 1
+        if depth != 0 or open_tok is None:
+            continue
+        attrs = open_tok.group(1)
+        body = seg[open_tok.end() : tok.start()]
+        open_tok = None
+        rm = re.search(r'row="(\d+)"', attrs)
+        cm = re.search(r'column="(\d+)"', attrs)
+        if rm is None or cm is None:  # 非网格 item（无 row/column）不计入
+            continue
+        row, col = int(rm.group(1)), int(cm.group(1))
         # 仅取该 item 块**直接子级**（widget/layout 嵌套深度 0）的实控件；
         # 嵌套在 widget 或 layout 内的子控件不算与兄弟 cell 抢位。
         names: list[str] = []

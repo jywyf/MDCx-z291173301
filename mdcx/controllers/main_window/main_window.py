@@ -277,6 +277,12 @@ class MyMAinWindow(QMainWindow):
         # 要到一批 processEvents 后才落定，直接同步会读到级联前的旧 custom.x
         # （1076 stale，由此 C1min=449 钉错 critic），而全量 pass 自带 page 级
         # 刷新、落定后单遍收敛（1075 对齐 / 显式重跑 459 收敛实测）。
+        # 80% 分数缩放下各页签竖向滚动条厚度逐页不等宽（未点开的页签从未被
+        # 布局，见 _sync_settings_scrollbar_widths）。排在全量同步之后落定，
+        # 量到的才是级联终态厚度
+        self.Ui.tabWidget.currentChanged.connect(
+            lambda _index: QTimer.singleShot(0, self._sync_settings_scrollbar_widths)
+        )
         self.Ui.tabWidget.currentChanged.connect(lambda _index: QTimer.singleShot(0, self._queue_nfo_post_cascade_sync))
         # 首开 NFO 字段说明跳动修复：beats 跑在 paint 之后，首开第一拍常读到
         # 中间态视口（滚动条闪烁）误触发 pin 左移。直连同步 settle（paint 前落定，
@@ -288,6 +294,9 @@ class MyMAinWindow(QMainWindow):
         # 窄态下 opl 从未被同步过、以天然位落在 pr 左边；宽态因之前切过 tab 已对齐）。
         # 故 stacked 切页下一拍同样只排队：休眠页由内层守卫 no-op，NFO 可见时在级
         # 联落定后的第二拍补齐（与 tab 钩子同一机制，幂等无累积）。
+        self.Ui.stackedWidget.currentChanged.connect(
+            lambda _index: QTimer.singleShot(0, self._sync_settings_scrollbar_widths)
+        )
         self.Ui.stackedWidget.currentChanged.connect(
             lambda _index: QTimer.singleShot(0, self._queue_nfo_post_cascade_sync)
         )
@@ -1142,6 +1151,61 @@ class MyMAinWindow(QMainWindow):
             after = (btn.x(), gb.width(), sc.viewport().width())
             if after == before:
                 break
+
+    def _sync_settings_scrollbar_widths(self) -> None:
+        """设置页各页签竖向滚动条厚度兜底（保证逐页等宽、有 sane 下限）
+
+        定位说明（务必先读，避免再被假象带偏）：本方法**不是**用户"演员/网络/
+        高级三页滚动条看着更细"那个现象的修法。生产逐页取证（临时日志，实测
+        dpr=1.00）显示 12 个页签的滚动条在每个可测字段上逐值相同：w=16、
+        sizeHint=16、样式类相同、祖先样式表相同（3128 字符）、视口 758、
+        滚动区 774；再对每页滚动条 grab() 逐像素统计，12 页都是 16px 宽的槽
+        + 16px 满宽滑块，唯一逐页不同的是**滑块长度**（占槽高 18%~82%，随
+        内容高度变化）。此前"80% 分数缩放 + 未布局页读 Qt 默认 100px 长度"
+        的根因推导已由这批实数证伪（dpr 实为 1.00，且 12 页宽度本就一致）。
+        本方法保留作兜底：若将来某页滚动条因样式/布局异常报出荒唐厚度（Qt 默
+        认长度值 100 那种），切页时会被拉回与其余页一致的合理值。
+        做法：切页落定后取各页厚度，只采信落在合理区间（8~48px）的读数，取
+        其中最宽者为准，把其余一律 setFixedWidth 对齐；已一致时完全 no-op
+        （幂等）；除滚动条自身厚度外不改任何几何，组框与行列宽由末尾的全量
+        同步按新视口重排。
+        注：本项目 Python 3.14 free-threading 下信号槽内抛异常会直接带崩
+        进程（已见 add_log 槽事故），故整体 try/except 兜底。
+        """
+        try:
+            ui = self.Ui
+            if not ui.page_setting.isVisibleTo(self):
+                return
+            bars = []
+            for index in range(ui.tabWidget.count()):
+                page = ui.tabWidget.widget(index)
+                if page is None:
+                    continue
+                area = page.findChild(CustomScrollArea)
+                if area is None:
+                    continue
+                bar = area.verticalScrollBar()
+                for widget in (area, area.viewport(), bar):
+                    widget.ensurePolished()
+                bars.append(bar)
+            if len(bars) < 2:
+                return
+            # 只采信已布局页的读数：未布局页的默认 100px 长度值必须滤掉，
+            # 否则会把所有页签错钉成 100px（离屏实测教训）
+            sane = [bar.width() for bar in bars if 8 <= bar.width() <= 48]
+            if not sane:
+                return
+            target = max(sane)
+            corrected = False
+            for bar in bars:
+                if bar.width() != target:
+                    bar.setFixedWidth(target)
+                    corrected = True
+            if corrected:
+                # 视口随之变化，立刻按新视口重排（否则组框按旧视口定格）
+                self._sync_page_layouts()
+        except Exception:
+            return
 
     # 设置-NFO「写入NFO的字段」组：col0 左标签（130px Fixed 右对齐），冒号在右缘
     _NFO_COLON_LABELS = (

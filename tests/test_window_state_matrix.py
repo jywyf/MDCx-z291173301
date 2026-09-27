@@ -1854,3 +1854,61 @@ def test_nfo_field_tips_no_jump_on_first_open(win, app):
         win._sync_page_layouts()
         app.processEvents()
     assert (btn.x(), btn.y()) == snap, f"非幂等: {snap} -> {(btn.x(), btn.y())}"
+
+
+def test_settings_scrollbars_uniform_width_across_tabs(win, app):
+    """设置页各页签竖向滚动条厚度必须逐像素一致（分数缩放不等宽修复回归）。
+
+    用户实测四条：100% 缩放各页一致；80% 缩放启动后先点开过的页正常、没点
+    过的更窄；等 30~60 秒或最大化再还原后全齐；且每次异常页都不同。
+    根因：QScrollBar 厚度指标要控件被 polish、且滚动区被真正布局过才有，
+    而 QStackedWidget 只布局当前页——未点开的页签滚动条从未被布局（离屏
+    实测其 width() 报 Qt 默认 100x30 的长度 100），分数缩放（样式 16px
+    ×0.8=12.8）下两种厚度取整到不同设备像素，于是"谁被打开谁先变齐"。
+    修复见 main_window._sync_settings_scrollbar_widths。
+    回归做法：先逐个点开所有页签（复刻生产"已布局"状态，厚度应统一落在
+    合理区间），再把两页改窄模拟未布局/未抛光页，调用控制器后各页必须被
+    统一到最宽者；组框几何原样恢复（视口随厚度复原，不留持久位移），
+    二次调用幂等。
+    """
+    from mdcx.views.CustomClass import CustomScrollArea
+
+    ui = win.Ui
+    win.resize(1089, 700)
+    win.show()
+    _goto(win, app, "page_setting")
+
+    found = []
+    for i in range(ui.tabWidget.count()):
+        page = ui.tabWidget.widget(i)
+        area = page.findChild(CustomScrollArea)
+        if area is not None:
+            found.append((page.objectName(), area.verticalScrollBar()))
+    assert len(found) >= 10, f"页签滚动区数量异常: {len(found)}"
+
+    # 逐个点开：QStackedWidget 只布局当前页，点开过才有真实厚度
+    for i in range(ui.tabWidget.count()):
+        ui.tabWidget.setCurrentIndex(i)
+        app.processEvents()
+    widths = {name: bar.width() for name, bar in found}
+    assert len(set(widths.values())) == 1, f"点开后各页厚度仍不一致: {widths}"
+    target = next(iter(widths.values()))
+    assert 8 <= target <= 48, f"点开后厚度不在合理区间（未布局?）: {target}"
+    gb = ui.groupBox_81
+    before = (gb.x(), gb.y(), gb.width(), gb.height())
+
+    # 故障注入：两页改窄 4px，模拟未布局（80% 下走另一种取整厚度）状态
+    for _name, bar in found[:2]:
+        bar.setFixedWidth(max(8, target - 4))
+    assert any(bar.width() != target for _name, bar in found), "故障注入未生效"
+
+    win._sync_settings_scrollbar_widths()
+    app.processEvents()
+    fixed = {name: bar.width() for name, bar in found}
+    assert len(set(fixed.values())) == 1, f"各页滚动条仍不等宽: {fixed}"
+    assert next(iter(fixed.values())) == target, f"未统一到最宽者: {fixed}(target={target})"
+    after = (gb.x(), gb.y(), gb.width(), gb.height())
+    assert after == before, f"组框几何漂移: {before} -> {after}"
+    win._sync_settings_scrollbar_widths()
+    app.processEvents()
+    assert {name: bar.width() for name, bar in found} == fixed, "非幂等"

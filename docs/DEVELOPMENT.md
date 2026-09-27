@@ -108,6 +108,17 @@ UI 层 (PyQt6)         → 界面展示、用户操作
 - 事故教训×2：(1)`views/` 曾被整体还原，测试只保一致性不保意图，重做后以离屏实测复验为准；(2)诚实公式别漏地板——700 宽下 `max(701+extra, 701//2)`，地板 350 会 binding（组测试因此挂过一次，vp=430/dw=782 时诚实值 349 vs 实际 350）。
 - 回归测试：`tests/test_window_state_matrix.py::test_nfo_groupbox_resyncs_after_stale_stretch`（故障注入改窄 64px；收敛环至多 3 轮；诚实公式 `max(701+(vp-dw),701//2)` 全实测值；跨页黑盒 1089/1900 严格等宽、700 地板 ±3；x/y/h 不动）。
 
+**设置页各页签滚动条厚度统一（80% 分数缩放下“未点开的页更窄”）**
+
+- 现象（用户实测四条，截图红框标出演员/网络/高级）：启动后先点开过的页正常、没点过的更窄；等 30~60 秒或最大化再还原后全部变齐；且每次异常页都不同。
+- 排查排除：滚动区 `.ui` 逐项一致（几何/frameShape/lineWidth/AlwaysOn/AlwaysOff/widgetResizable，演员仅多 Sunken 装饰）；12 个滚动区全是 `CustomScrollArea`（`findChild` 无遗漏）；全库无 `setStyle`/`QScrollBar` 实例化/`setVerticalScrollBar`，策略全 AlwaysOn；QSS 滚动条规则全库唯一（`controllers/main_window/style.py:build_scrollbar_style`，`QScrollBar:vertical{width:16px}` + 满宽滑块 + `min-height:44px`，随 centralwidget 整页下发）且渲染输出合法（大括号平衡）；离屏 12 页 + 0.8 缩放 + 首开→最大化→还原三轮探针全部逐值相等。
+- **生产取证（临时日志，用户跑）**：`dpr=1.00`（**不是**分数缩放，80% 猜测被否）；12 页逐值相同——`w=16`、`sizeHint=16`、样式类相同、祖先样式表 3128 字符相同、视口 758、滚动区 774（唯一例外 p0 缺 min/max 约束，宽度同为 16）。
+- **像素级取证**（真实 QSS 不 patch `set_style`，逐页 `bar.grab()` 统计）：12 页都是 **16px 宽的槽 + 16px 满宽滑块**（每列"非底色"像素数逐列相等），唯一逐页不同的是**滑块长度**占槽高 18%~82%（随内容高度变化，`sb.max` 各页不同）。注意浅色主题槽底 `#E5E7EB` 接近白底、滑块 `#CBD5E1`，两者对比极低——"整条实心灰柱"与"淡细条"的观感差异主要来自滑块长度而非厚度。
+- 结论：用户"三页更细"的现象**至今未定案**，此前"未布局页读 Qt 默认 100px 长度 + 80% 分数缩放取整不同"的根因推导已被上述实数证伪。下一步需要放大截图（整窗截图无法判 1~2px 级差异）才能定位真实差异像素。
+- 保留兜底：`_sync_settings_scrollbar_widths()`（try/except 整体兜底，3.14t free-threading 下槽内抛异常会直接带崩进程，见 add_log 槽事故）遍历 12 页签 CustomScrollArea，`area/viewport/bar` 全部 `ensurePolished()`，只采信 8~48px 区间读数取最宽者为准、其余 `setFixedWidth(target)`，有改动则 `_sync_page_layouts()` 按新视口重排；连接用 `QTimer.singleShot(0, …)` 且排在 `_queue_nfo_post_cascade_sync` 之后（量级联终态厚度，直连会量到级联前几何，同款陷阱见字段说明那节）。生产实测各页本就 16px，故它在生产是 **no-op 兜底**：只在将来某页厚度荒唐（Qt 默认长度值 100 那种）时拉回一致值。已一致时零改动（幂等）。
+- 观感调整尝试与**最终结论：不改**（用户 2026-09-27 决定放弃此问题）。两轮尝试均已回滚：`① 槽底加深（浅 #E5E7EB→#D8DEE6 / 深 #1F2937→#263241）+ 滑块定厚 10px`、用户否；`② 只把滑块改窄 8px、颜色不动`、用户试后仍无改善、否。回滚后 `build_scrollbar_style` 回到 #153 原状（槽宽 16px、滑块满宽无 width/height、最短 44px、深浅四色原样）。取证链（四路独立证据，全部指向"厚度逐页相同"）：生产逐页日志 `w=16 / sizeHint=16 / 样式类相同 / 祖先样式表 3128 字符相同 / 视口 758 / 滚动区 774`，`dpr=1.00`（80% 分数缩放猜测被否）；离屏真实 QSS 逐页 `bar.grab()` 像素指纹——12 页皆 16px 槽 + 16px 满宽滑块；整块窗口合成图回匹配（先从 `grab()` 取两种主色再回合成图找条色，容差 2）——`bar=(0,0,16,685)`、`bar_x_win=1047`、`right_gap=26`、命中条色宽度 16 逐页相等；红槽诊断（临时把 `track` 刷 #FF0000、`handle` 刷 #0000FF 截图，用户配合）——两页红槽宽度与 x 位置完全一致，**唯一差异是滑块长度**（NFO 蓝段 ~362px vs 网络页 ~262px，同一 590px 槽内；槽底红段 228 vs 328）。滑块长度由 Qt 按 内容高/视口高 算出（12 页占槽高 18%~82%），无法跨页拉平。
+- 回归测试：`tests/test_window_state_matrix.py::test_settings_scrollbars_uniform_width_across_tabs`（先逐个点开 12 页签复刻生产"已布局"态并断言厚度统一且在 8~48 区间 → 记录 `groupBox_81` 几何 → 注入两页窄 4px → 调控制器 → 断言全页统一到 target、组框几何原样恢复、幂等）。初版控制器对全部读数取 max，被未布局页的 100 污染成 target=100（测试首跑即挂），已改为逐条过滤 sane 读数。
+
 **版本检查定时复查走完整提示链**（用户需求：`timer_update`（12h）只连裸 `check_version`——主线程阻塞做网络且返回值丢弃，定时检查永远不提示）
 
 - 根因：定时器直连 `check_version`（`main_window.py:235`），阻塞主线程做网络 I/O，返回的版本号无处消费；真正会提示的只有启动 `show_version()` 那一次（工作线程 + 比较 + 红字/下载链接/标签刷新全链路）。
