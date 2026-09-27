@@ -1,0 +1,253 @@
+name: Build with Python 3.14
+
+# Python 3.14 兼容性构建，与 release.yml（3.13 发版）并存、互不干扰：
+# - 不创建 Release、不上传 tag 产物：发版仍只由 release.yml 负责（本工作流 permissions 只读）。
+# - 产物名统一 py314-* 前缀，与 release.yml 的 mdcx-* 完全不撞名。
+# - 3.14 依赖生态尚未完全就绪（cp314 wheel、PyInstaller 对 3.14 的支持），故 build-app
+#   带 continue-on-error：只观测「3.14 能不能编」，不阻塞主干。全平台确认可过后，
+#   再把 release.yml 的 python-version 由 3.13 切到 3.14 并删除本文件。
+#
+# 与 release.yml 的差异仅四处：python-version 3.14、UV_PYTHON 锁定 3.14、
+# uv sync 失败可选回退重新解析、产物加 py314 前缀 + 不发 Release。
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # 显式锁定 3.14：仓库无 .python-version，UV_PYTHON 兜住 setup-python 之外的 uv 调用
+  UV_PYTHON: "3.14"
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: "构建平台"
+        required: false
+        default: "all"
+        type: choice
+        options:
+          - all
+          - windows
+          - macos
+          - linux
+      version:
+        description: "版本号（留空则取 mdcx/consts.py 的 LOCAL_VERSION）"
+        required: false
+        default: ""
+      allow_relock:
+        description: "uv sync --locked 失败时允许重新解析依赖（uv.lock 缺 cp314 wheel 时需要）"
+        required: false
+        default: "true"
+        # 用字符串选项而非 boolean：push 事件下 inputs 为空串，boolean 比较会被
+        # GitHub 的宽松相等（''→0、false→0）误判成 false 而关掉回退。
+        type: choice
+        options:
+          - "true"
+          - "false"
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: build-py314-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  init-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Set matrix
+        id: set-matrix
+        shell: bash
+        # push 事件下 inputs 为空串，回落全平台
+        env:
+          PLATFORMS: ${{ inputs.platforms || 'all' }}
+        run: |
+          items=()
+
+          # 与 release.yml 同一套 runner 组合，https://github.com/actions/runner/issues/1985
+          if [ "$PLATFORMS" = "all" ] || [ "$PLATFORMS" = "macos" ]; then
+            items+=('{"build": "macos", "os": "macos-latest", "arch": "aarch64"}')
+            items+=('{"build": "macos", "os": "macos-15-intel", "arch": "x86_64"}')
+          fi
+          if [ "$PLATFORMS" = "all" ] || [ "$PLATFORMS" = "windows" ]; then
+            items+=('{"build": "windows", "os": "windows-2025", "arch": "x86_64"}')
+          fi
+          if [ "$PLATFORMS" = "all" ] || [ "$PLATFORMS" = "linux" ]; then
+            items+=('{"build": "linux", "os": "ubuntu-latest", "arch": "x86_64"}')
+          fi
+
+          if [ "${#items[@]}" -eq 0 ]; then
+            echo "::error::没有匹配的平台：'$PLATFORMS'（可选 all / windows / macos / linux）"
+            exit 1
+          fi
+
+          # 合并 items 到 json 数组
+          matrix="matrix=["
+          for ((i=0; i<${#items[@]}; i++)); do
+            matrix+=" ${items[i]}"
+            if ((i != ${#items[@]}-1)); then
+              matrix+=","
+            fi
+          done
+          matrix+="]"
+
+          echo "$matrix" >> "$GITHUB_OUTPUT"
+
+  build-app:
+    needs: init-matrix
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    # 3.14 尚未发版可用：失败只标记不阻塞，等依赖生态跟上再取消
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.init-matrix.outputs.matrix) }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref }}
+
+      - name: Resolve version
+        id: ver
+        shell: bash
+        env:
+          DISPATCH_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          version="$DISPATCH_VERSION"
+          if [ -z "$version" ] && [ -n "$REF_NAME" ] && [ "$REF_NAME" != "main" ]; then
+            version="$REF_NAME"
+          fi
+          if [ -z "$version" ]; then
+            version=$(grep -oE 'LOCAL_VERSION[[:space:]]*=[[:space:]]*[0-9]+' mdcx/consts.py | grep -oE '[0-9]+')
+          fi
+
+          # 与 release.yml 同约束：版本号必须纯数字（check_version 对 tag_name 做 int()）
+          if ! [[ "$version" =~ ^[0-9]+$ ]]; then
+            echo "::error::版本号必须是纯数字 YYYYMMDD，当前为 '$version'。请检查 mdcx/consts.py 的 LOCAL_VERSION 或手动输入。"
+            exit 1
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.1.0
+        with:
+          activate-environment: true
+
+      # 3.14 构建最容易被忽略的坑：uv 悄悄挑了别的解释器，编出来的还是 3.13。
+      # 用 PATH 上的 python 断言（不能用 uv run：那会先隐式 sync，把下面 --locked 的严格性架空）。
+      - name: Verify Python 3.14 in use
+        shell: bash
+        run: |
+          python -c 'import sys; print(sys.version); assert sys.version_info[:2] == (3, 14), f"expected 3.14, got {sys.version_info[:2]}"'
+
+      - name: Install Linux system dependencies
+        if: ${{ matrix.build == 'linux' }}
+        run: >
+          sudo apt-get update -y && sudo apt-get install -y
+          libglib2.0-0 libegl1 libgl1 libfontconfig1
+          libqt6core6 libqt6gui6 libqt6widgets6 libqt6network6 libqt6xml6
+          libdbus-1-3 libxkbcommon0 libopengl0
+          libxcb-cursor0 libxcb-xinerama0 libxcb-icccm4 libxcb-image0
+          libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0
+
+      - name: Install locked dependencies
+        shell: bash
+        env:
+          # push 事件无 inputs（空串）→ 视为允许回退；手动触发按输入走
+          ALLOW_RELOCK: ${{ inputs.allow_relock != 'false' }}
+        run: |
+          set +e
+          uv sync --locked --all-extras --dev
+          status=$?
+          set -e
+
+          if [ "$status" -ne 0 ]; then
+            if [ "$ALLOW_RELOCK" != "true" ]; then
+              echo "::error::uv sync --locked 在 Python 3.14 下失败（allow_relock=false）。多半是 uv.lock 里没有 cp314 的 wheel/sdist：本地跑 uv lock 后提交即可。"
+              exit "$status"
+            fi
+            # 允许重新解析只影响本次 CI 的临时工作树（检出为干净树，产物不覆盖锁文件）。
+            echo "::warning::uv sync --locked 在 Python 3.14 下失败，回退到重新解析依赖。opencv-contrib-python-headless 等写死版本若无 cp314 wheel，仍会失败——那属于需要升级依赖的硬阻塞。"
+            uv sync --all-extras --dev
+          fi
+
+      # 超分工具一体包：Windows/Linux 打包期内嵌（macOS 不内嵌，保持首次使用按需下载）。
+      # 顺序不可调换——build.py 缺工具直接 BuildError（tests/test_sr_bundling.py 锁定此约束）。
+      - name: Restore SR tools cache (Windows/Linux)
+        if: ${{ matrix.build == 'windows' || matrix.build == 'linux' }}
+        uses: actions/cache@v4
+        with:
+          path: build/sr_tools
+          key: sr-tools-${{ matrix.build }}
+
+      - name: Fetch SR tools (Windows/Linux)
+        if: ${{ matrix.build == 'windows' || matrix.build == 'linux' }}
+        shell: bash
+        env:
+          PYTHONIOENCODING: utf-8
+        run: uv run python -m scripts.fetch_sr_tools --platform ${{ matrix.build }}
+
+      - name: Build macOS app - macOS
+        if: ${{ matrix.build == 'macos' }}
+        run: |
+          uv run scripts/build.py --create-dmg --version "${{ steps.ver.outputs.version }}" --debug
+          mv dist/MDCx.dmg "dist/MDCx-${{ matrix.arch }}.dmg"
+
+      - name: Build Windows app - Windows
+        if: ${{ matrix.build == 'windows' }}
+        env:
+          PYTHONIOENCODING: utf-8
+        run: uv run scripts/build.py --version "${{ steps.ver.outputs.version }}" --debug
+
+      - name: Build Linux app - Linux
+        if: ${{ matrix.build == 'linux' }}
+        env:
+          PYTHONIOENCODING: utf-8
+        run: uv run scripts/build.py --version "${{ steps.ver.outputs.version }}" --debug
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v7
+        if: ${{ matrix.build == 'macos' }}
+        with:
+          name: py314-macos-${{ matrix.arch }}
+          path: dist/MDCx-${{ matrix.arch }}.dmg
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v7
+        if: ${{ matrix.build == 'windows' }}
+        with:
+          name: py314-windows-${{ matrix.arch }}
+          path: dist/MDCx.exe
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v7
+        if: ${{ matrix.build == 'linux' }}
+        with:
+          name: py314-linux-${{ matrix.arch }}
+          path: dist/MDCx
+
+      - name: Summary
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          {
+            echo "### Python 3.14 构建：${{ matrix.build }}-${{ matrix.arch }}"
+            echo ""
+            printf -- '- 解释器：`%s`\n' "$(python -V 2>&1)"
+            printf -- '- 版本号：`%s`\n' "${{ steps.ver.outputs.version }}"
+            printf -- '- 结果：%s\n' "${{ job.status }}"
+          } >> "$GITHUB_STEP_SUMMARY"

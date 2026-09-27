@@ -460,6 +460,8 @@ uv sync --locked --all-extras --dev
 uv run build --debug
 ```
 
+CI 工作流：`.github/workflows/release.yml` 是发版主流程（Python 3.13，tag `2*` 触发并创建 Release）；`.github/workflows/build-py314.yml` 是 Python 3.14 兼容性构建（`workflow_dispatch` + main 推送触发），只上传 `py314-*` 产物、**不创建 Release**、不改 `release.yml`，`build-app` 带 `continue-on-error` 以免 3.14 依赖生态未就绪时阻塞主干。全平台确认可编译后，才把 `release.yml` 的 `python-version` 切到 3.14 并删除该文件。
+
 ## 迁移指南
 
 ### 旧版爬虫 → GenericBaseCrawler
