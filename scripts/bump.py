@@ -46,6 +46,21 @@ def get_changelog_file() -> Path:
     return project_root / "docs" / "changelog.md"
 
 
+def get_uv_lock_file() -> Path:
+    project_root = get_project_root()
+    return project_root / "uv.lock"
+
+
+def get_uv_lock_root_version() -> str | None:
+    """读取 uv.lock 中根包（name = "mdcx"）的 version，无文件返回 None。"""
+    uv_lock = get_uv_lock_file()
+    if not uv_lock.exists():
+        return None
+    content = uv_lock.read_text(encoding="utf-8")
+    match = re.search(r'(?m)^\[\[package\]\]\nname = "mdcx"\nversion = "([^"]+)"', content)
+    return match.group(1) if match else None
+
+
 def get_current_version() -> int:
     """从 consts.py 中获取当前 LOCAL_VERSION"""
     consts_file = get_consts_file()
@@ -111,7 +126,32 @@ def update_display_name(new_name: str) -> tuple[Path, Path]:
     if py_new == py_content:
         raise ValueError("pyproject.toml 版本号替换失败")
     pyproject.write_text(py_new, encoding="utf-8")
+    sync_uv_lock_version(new_name)
     return consts_file, pyproject
+
+
+def sync_uv_lock_version(display_name: str) -> Path | None:
+    """把 uv.lock 根包版本同步为展示版本（去掉 v 前缀）。
+
+    CI 用 `uv sync --locked` 构建，pyproject 与 lock 脱节会导致全平台
+    构建失败；此前只同步四处、漏了此处。无 uv.lock 时跳过并返回 None。
+    """
+    uv_lock = get_uv_lock_file()
+    if not uv_lock.exists():
+        console.print("[yellow]⚠ 未找到 uv.lock，跳过 lock 版本同步[/yellow]")
+        return None
+    content = uv_lock.read_text(encoding="utf-8")
+    new_content, count = re.subn(
+        r'(?m)^(\[\[package\]\]\nname = "mdcx"\nversion = ")[^"]+(")',
+        rf"\g<1>{display_name.removeprefix('v')}\g<2>",
+        content,
+        count=1,
+    )
+    if count == 0:
+        raise ValueError("uv.lock 根包版本替换失败，请检查 uv.lock 文件格式")
+    if new_content != content:
+        uv_lock.write_text(new_content, encoding="utf-8")
+    return uv_lock
 
 
 def update_changelog_date(new_local_version: int, display_name: str) -> Path | None:
@@ -142,7 +182,7 @@ def update_changelog_date(new_local_version: int, display_name: str) -> Path | N
 
 
 def check_consistency() -> list[str]:
-    """校验四处版本点是否一致，返回问题列表（空表示一致）。"""
+    """校验五处版本点是否一致，返回问题列表（空表示一致）。"""
     issues: list[str] = []
     local = get_current_version()
     name = get_current_name()
@@ -152,6 +192,10 @@ def check_consistency() -> list[str]:
     py_match = re.search(r'(?m)^version\s*=\s*"([^"]+)"', py_content)
     if not py_match or py_match.group(1) != name.removeprefix("v"):
         issues.append(f"pyproject.toml version={py_match.group(1) if py_match else '?'} 与 VERSION_NAME={name} 不一致")
+
+    lock_version = get_uv_lock_root_version()
+    if lock_version is not None and lock_version != name.removeprefix("v"):
+        issues.append(f"uv.lock 根包 version={lock_version} 与 VERSION_NAME={name} 不一致（CI 的 uv sync --locked 会失败）")
 
     changelog = get_changelog_file()
     if changelog.exists():
@@ -180,14 +224,14 @@ def main(
     ] = None,
     dry_run: Annotated[bool, typer.Option("--dry-run", "-n", help="预览模式")] = False,
     force: Annotated[bool, typer.Option("--force", "-f", help="强制执行")] = False,
-    check: Annotated[bool, typer.Option("--check", "-c", help="仅校验四处版本点是否一致")] = False,
+    check: Annotated[bool, typer.Option("--check", "-c", help="仅校验五处版本点是否一致")] = False,
 ) -> None:
     """
     更新 LOCAL_VERSION（发版日），可选同步展示版本名与 changelog 段日期。
 
     [bold green]示例:[/bold green]
 
-    • [cyan]python bump.py --check[/cyan] - 校验四处版本点一致
+    • [cyan]python bump.py --check[/cyan] - 校验五处版本点一致
     • [cyan]python bump.py[/cyan] - LOCAL_VERSION +1
     • [cyan]python bump.py --version 20260918[/cyan] - 设为指定日期版本号
     • [cyan]python bump.py --version 20260918 --name 2.1.2[/cyan] - 同时升展示版本
@@ -200,7 +244,7 @@ def main(
                 for issue in issues:
                     console.print(f"[red]✗ {issue}[/red]")
                 raise typer.Exit(1)
-            console.print("[green]✓ 四处版本点一致[/green]")
+            console.print("[green]✓ 五处版本点一致[/green]")
             return
 
         current_version = get_current_version()
@@ -230,7 +274,7 @@ def main(
             console.print("[cyan]预览模式：不会实际修改文件[/cyan]")
             console.print(
                 "[dim]将修改: consts.py 的 LOCAL_VERSION"
-                + (" + VERSION_NAME、pyproject.toml version" if name else "")
+                + (" + VERSION_NAME、pyproject.toml version、uv.lock 根包版本" if name else "")
                 + f"、changelog 段日期（若段标题为 {new_name}）[/dim]"
             )
             return

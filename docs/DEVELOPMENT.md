@@ -409,14 +409,14 @@ ASIN 数据库（Excel `amazon_asin_database.xlsx`），搜索到的 ASIN 与番
 
 ## 版本号管理
 
-版本号有两处定义、四个同步点；任一处不一致都会被 `scripts/bump.py --check` 与 `tests/test_version_consistency.py` 判红。
+版本号有两处定义、五个同步点；任一处不一致都会被 `scripts/bump.py --check` 与 `tests/test_version_consistency.py` 判红。
 
 **两处定义（`mdcx/consts.py`）**
 
 - `LOCAL_VERSION`：纯数字 `YYYYMMDD`，用于版本比较、更新检查与构建；**GitHub release 的 Tag 必须是同值纯数字**（`check_version` 对 `tag_name` 做 `int()`，`vX.Y.Z` 形态的标签会被直接跳过）。
 - `VERSION_NAME`：展示名 `vX.Y.Z`，界面/日志统一显示为 `VERSION_NAME (LOCAL_VERSION)`。
 
-**四个同步点**
+**五个同步点**
 
 | 位置 | 值 |
 |---|---|
@@ -424,13 +424,14 @@ ASIN 数据库（Excel `amazon_asin_database.xlsx`），搜索到的 ASIN 与番
 | `mdcx/consts.py` 的 `VERSION_NAME` | `vX.Y.Z` |
 | `pyproject.toml` 的 `version` | `X.Y.Z`（`VERSION_NAME` 去掉 `v`） |
 | `docs/changelog.md` 首个版本段 `## vX.Y.Z (YYYY-MM-DD)` | 版本 = `VERSION_NAME`；日期 = `LOCAL_VERSION` 的日期 |
+| `uv.lock` 根包 `mdcx` 的 `version` | `X.Y.Z`（与 `pyproject.toml` 一致；CI 全平台 `uv sync --locked` 强校验，脱节即构建失败） |
 
-（`uv.lock` 里项目包 `mdcx` 的 `version` 也应与 `pyproject.toml` 一致，`uv sync` 会写回。）
+**事故记录（2026-09-27）**：曾只升 `pyproject.toml` 到 2.1.4、漏同步 `uv.lock`（根包仍锁 2.1.3），`release.yml` 四个构建腿（windows-2025 / macos-latest / macos-15-intel / ubuntu-latest）齐刷刷在 `Install locked dependencies` 步 exit 1。教训：改版本号/日期必须走 `bump`（现已自动同步 lock），且以 `bump --check` + 版本一致性测试为准，不要手改单点。
 
 **改版流程**
 
 1. 在 `docs/changelog.md` 顶部新建目标版本段并写条目；已发版旧段保留，未发版段被后续议题取代时合并重写成最终形态。
-2. `uv run bump --version <YYYYMMDD> --name X.Y.Z` 同步四处（`--dry-run` 预览、`--force` 免交互）；只校验用 `uv run bump --check`。
+2. `uv run bump --version <YYYYMMDD> --name X.Y.Z` 同步五处（`--dry-run` 预览、`--force` 免交互；`--name` 会连带同步 `uv.lock` 根包版本）；只校验用 `uv run bump --check`。
 3. 复核 `uv run pytest tests/test_version_consistency.py tests/test_version_metadata.py`。
 4. 打**纯数字** tag（= `LOCAL_VERSION`）触发 `release.yml`。「已发版」的判据是数字 tag 已推送，而非 changelog 有没有该段。
 
