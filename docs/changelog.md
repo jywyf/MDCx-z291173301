@@ -2,6 +2,8 @@
 
 ## v2.1.4 (2026-09-27)
 
+- **文档写明「网络重试次数默认就是 3 次」**：核实重试默认值四处均为 3、无 5 的来源 —— `mdcx/config/v1.py`（`retry: int = 3`）、`mdcx/config/models.py`（`Field(default=3)`）、设置页 `horizontalSlider_retry`（1~3、默认 3）、`load_config` 加载钳位 `min(max(retry,1),3)`；`handlers.py` 的「检测网络」表头直接读 `manager.config.retry`，无任何硬编码。故此前看到的「重试：5」是本条修复（v2.1.4 滑条放开 1~3 + 加载钳位）之前旧版本的行为，重启即恢复 3。`CONFIGURATION.md` 重试次数行改为显式「默认就是 3 次（出厂默认，不会变成 5）」，并顺带修正过期的「拉动条上限 3（2 / 3 二档可选）」为「范围 1~3（1 / 2 / 3 三档可选）」、补默认值定义位置与钳位说明。无代码改动
+
 - **CI 全平台构建失败修复：`uv.lock` 根包版本漏同步**：`pyproject.toml` 升到 2.1.4 后 `uv.lock` 根包仍锁 2.1.3，`release.yml` 四个构建腿（windows-2025 / macos-latest / macos-15-intel / ubuntu-latest）齐在 `Install locked dependencies`（`uv sync --locked`）步 exit 1。现 `uv lock` 重生成（diff 仅根包一行），`uv lock --check` 通过。根治：`scripts/bump.py` 的 `--name` 升版同步追加 `uv.lock` 根包版本（`sync_uv_lock_version`），`--check` 升级为五处校验；`tests/test_version_consistency.py` 新增 `test_uv_lock_root_version_matches_display_name`（过期 lock 本地 0.4s 即红，无需等 CI）；`DEVELOPMENT.md`「版本号管理」同步点四→五并记录本次事故。回归：版本一致性 3 项 + `test_version_metadata` 1 项 + `bump --check` 全过
 
 - **重试次数滑动条放开到 1~3、保存配置即重建网络客户端**：`horizontalSlider_retry` 最小值 2 → 1（最大值确认本来就是 3，默认值 3 不变，`MDCx.ui` 与 `MDCx.py` 同改）；`load_config` 加载时把重试值钳位到 [1,3]，旧配置越界值进不了界面与检测显示。另修复保存不断连但不生效的问题：此前 `save_config` 只改 `manager.config` 内存值 + 落盘，而 `AsyncWebClient` 的重试/超时/代理在构造时固化，检测网络实际仍用旧值（表头数字与实际行为脱节，需重启才生效）。现保存按钮处理在 `save/load_config` 后调 `manager._replace_config(manager.config)` 原子切换新客户端，旧客户端由持有方租约保护、空闲后关闭（检测进行中点保存不断连）；改完重试条点保存，下次检测即用新次数。超时滑动条无需改动：诊断项每次请求显式传 `timeout=_diagnostic_timeout()`（实时读配置，已实测 30/10/5 逐一对应），`test_ui_structure`（含 `.ui`→`.py` 同步）15 项 + `test_network_check` 等 94 项全过
