@@ -98,6 +98,7 @@ UI 层 (PyQt6)         → 界面展示、用户操作
 - 根因：按钮 Fixed 80x26、设计 x=640..720；组框设计 x=30 宽 701、右缘 731，设计余量仅 11px。宽幅同步按 width=设计宽+extra 双向拉伸组框（extra<=0 时缩回）；extra<0（视口窄于设计 796）时组右缘左移而按钮不动——测试环境 1089 窗组宽 724 尚未溢出，1000 窗组宽约 635、按钮伸出约 66px。
 - 修复：`_sync_nfo_field_tips()`（`_sync_page_layouts` 末尾、set_align 之后调用，无新钩子）。绝对 pin：复位 x=640→重排→按钮右缘超过（组右缘-11）才左移进去；只左移，宽态 640 不动，y 不动；同父坐标系直接可比；休眠页跳过，多拍收敛幂等。测试写法注意：goto 的 beats 会提前同步把按钮钉到 pin 位，“自然溢出”基线须先 `btn.move(640, y)` 复位再取。
 - 回归测试：`tests/test_window_state_matrix.py::test_nfo_field_tips_stays_inside_group_box` 锁定「1000 窄态按钮右缘≤组右缘-11、y 不动、二次同步幂等；1900 宽态 x==640」。
+- 首开跳动修复（用户报障：初次打开设置-NFO 的瞬间按钮从右边跳到左边，再次打开正常）：tab 切换只走双拍 beats（直接读 stale 几何会钉错 thirds），paint 跑在 beats 之前；首开第一拍常读到中间态视口（滚动条闪烁），trailing 定格偏窄组框，pin 误判溢出左移 → 可见跳动；第二拍落定后复位，之后 beats 全 no-op。修复 `_settle_settings_after_switch()` 直连 tab/stacked 的 currentChanged（paint 前）：至多 3 轮{全量同步+泵}至稳（快照按钮 x/组宽/视口），不进 resize 路径，beats 留兜底，休眠早退。教训：曾试 `setUpdatesEnabled` 关 paint 抑中间帧，反而扰动渲染扫描类量测致落点偏移（rd.x 203→213，country_year/tail 挂），已删。回归测试 `test_nfo_field_tips_no_jump_on_first_open`：冷窗 900 宽 + 裸切 NFO tab（零外部 beats）一次落定到诚实公式 pin 位，随后全量+beats 幂等；灵敏度已用 blockSignals 模拟修复前验证（按钮停 640 vs 期望 488，必挂）。
 
 **设置-NFO 组框右缘看齐水印/演员（清理式终局：设计回到 701，控制器已删）**
 

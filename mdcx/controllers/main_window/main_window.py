@@ -278,6 +278,10 @@ class MyMAinWindow(QMainWindow):
         # （1076 stale，由此 C1min=449 钉错 critic），而全量 pass 自带 page 级
         # 刷新、落定后单遍收敛（1075 对齐 / 显式重跑 459 收敛实测）。
         self.Ui.tabWidget.currentChanged.connect(lambda _index: QTimer.singleShot(0, self._queue_nfo_post_cascade_sync))
+        # 首开 NFO 字段说明跳动修复：beats 跑在 paint 之后，首开第一拍常读到
+        # 中间态视口（滚动条闪烁）误触发 pin 左移。直连同步 settle（paint 前落定，
+        # 循环至稳），beats 留作兜底；休眠时方法内早退零成本。
+        self.Ui.tabWidget.currentChanged.connect(self._settle_settings_after_switch)
         # stacked 切页同理：NFO 休眠时 resize/changeEvent 进来的 _sync_page_layouts
         # 会被各 sync 内 isVisibleTo 早退跳过，而切回设置页时 NFO 的 tab 索引没变、
         # tabWidget.currentChanged 根本不触发——NFO 将永远停留在旧几何（用户截图：
@@ -287,6 +291,10 @@ class MyMAinWindow(QMainWindow):
         self.Ui.stackedWidget.currentChanged.connect(
             lambda _index: QTimer.singleShot(0, self._queue_nfo_post_cascade_sync)
         )
+        # 切回设置页（NFO tab 索引不变、无 tab 钩子）同样首帧落定，方法内判
+        # 设置页/NFO 可见性，休眠早退；_on_page_change_nfo_panel 取消切页时
+        # 已回到主页，守卫直接返回。
+        self.Ui.stackedWidget.currentChanged.connect(self._settle_settings_after_switch)
         # 说明文字宽度变化（滚动条占位、休眠页拉伸等）时自动补一次重算。
         self.Ui.label_66.installEventFilter(self)
         self._bind_system_theme_refresh()
@@ -1098,6 +1106,42 @@ class MyMAinWindow(QMainWindow):
     def _queue_nfo_post_cascade_sync(self) -> None:
         """tab 切换后第一拍：只排队，把全量同步留到级联落定后的第二拍。"""
         QTimer.singleShot(0, self._sync_page_layouts)
+
+    def _settle_settings_after_switch(self) -> None:
+        """切 tab/切页后同步落定设置页（首开 NFO 字段说明跳动修复）。
+
+        现象：初次打开设置-NFO 的瞬间，「字段说明」按钮从右边跳到左边
+        （再次打开不再出现）。根因链：
+        1) tab 切换只走双拍 beats（280 行注释：直接读会拿到级联前 stale
+           几何钉错 thirds，故第一拍只排队、第二拍才全量同步）；
+        2) paint 发生在 beats 之前，首开第一拍常看到中间态视口
+           （滚动条闪烁 805 级），trailing 按它把组框定格偏窄，
+           field pin 误判溢出把按钮左移 → 肉眼看到跳动；第二拍落定后
+           复位 640，之后各次打开几何早已落定、beats 全是 no-op，
+           故不再跳。
+        做法：currentChanged 上直连本方法（paint 之前执行），至多 3 轮
+        {全量同步+泵事件}至稳（快照按钮 x/组宽/视口；trailing
+        的 setGeometry 同步生效、泵让滚动条级联落定），切 tab 返回时几何
+        已是终态（注：曾试 setUpdatesEnabled 关 paint 抑中间帧，反而扰动
+        渲染扫描类量测致落点偏移 rd.x 203→213、country_year/tail 挂，
+        已删除）。只接离散切换信号，不进 resize 路径；beats 原位保留
+        作级联兜底；设置页/NFO 休眠时直接返回（零成本）。
+        """
+        ui = self.Ui
+        if not ui.page_setting.isVisibleTo(self):
+            return
+        btn = ui.pushButton_field_tips_nfo
+        if not btn.isVisibleTo(self):
+            return
+        gb = ui.groupBox_81
+        sc = ui.scrollArea_13
+        for _ in range(3):
+            before = (btn.x(), gb.width(), sc.viewport().width())
+            self._sync_page_layouts()
+            QApplication.processEvents()
+            after = (btn.x(), gb.width(), sc.viewport().width())
+            if after == before:
+                break
 
     # 设置-NFO「写入NFO的字段」组：col0 左标签（130px Fixed 右对齐），冒号在右缘
     _NFO_COLON_LABELS = (

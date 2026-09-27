@@ -1810,3 +1810,47 @@ def test_nfo_groupbox_resyncs_after_stale_stretch(win, app):
             assert gb81.width() == gb31.width(), f"{w}宽 两组不等宽: nfo={gb81.width()} 水印={gb31.width()}"
         else:
             assert abs(gb81.width() - gb31.width()) <= 3, f"{w}宽 两组差超3px: nfo={gb81.width()} 水印={gb31.width()}"
+
+
+def test_nfo_field_tips_no_jump_on_first_open(win, app):
+    """首开 NFO 字段说明按钮不得跳动：冷窗 + 900 窄宽 + 零外部 beats，一次落定。
+
+    用户报障：初次打开设置-NFO 的瞬间按钮从右边跳到左边，再次打开正常。
+    根因：tab 切换只走双拍 beats（直接读 stale 几何会钉错 thirds），paint
+    跑在 beats 之前；首开第一拍常读到中间态视口（滚动条闪烁），trailing
+    定格偏窄组框，pin 误判溢出左移 → 可见跳动；第二拍落定后复位，
+    之后各次几何已稳、beats 全 no-op。
+    回归断言：冷窗 resize(900) → show → 切设置页 → 裸切 NFO tab
+    （零外部 processEvents，同步 settle 必须在 direct 钩子里一次落定，
+    paint 之前），按钮即终态；随后全量+beats 幂等、无位移。
+    全实测值：期望 pin 位按诚实公式 701+(视口-设计宽) 现场算（900 宽下
+    溢出确定，stale 组 701 下按钮停 640 必挂），不硬编码。
+    """
+    ui = win.Ui
+    btn = ui.pushButton_field_tips_nfo
+    gb = ui.groupBox_81
+    sc = ui.scrollArea_13
+    win.resize(900, 700)
+    win.show()
+    _goto(win, app, "page_setting")
+    y0 = btn.y()
+    for i in range(ui.tabWidget.count()):
+        if ui.tabWidget.widget(i).findChild(type(btn), "pushButton_field_tips_nfo") is not None:
+            ui.tabWidget.setCurrentIndex(i)
+            break
+    # 零外部 beats：到此 direct settle 已跑完（内部泵收敛），按钮须已是终态
+    vp = sc.viewport().width()
+    dw = sc.widget()._wide_children_design_width
+    honest_gb = max(701 + (vp - dw), 701 // 2)
+    assert gb.width() == honest_gb, f"首开组框未落定: {gb.width()} != {honest_gb}(vp={vp},dw={dw})"
+    limit = gb.x() + gb.width() - 11
+    expect_x = 640 if 640 + btn.width() <= limit else limit - btn.width()
+    assert btn.x() == expect_x, f"首开按钮未一次落定: btn.x={btn.x()} 期望={expect_x}(limit={limit})"
+    assert btn.x() + btn.width() <= limit, "首开按钮溢出组框"
+    assert btn.y() == y0, "按钮上下移动了"
+    # 幂等：后续全量+beats 纹丝不动（首遍即终态，无跳动可跳）
+    snap = (btn.x(), btn.y())
+    for _ in range(3):
+        win._sync_page_layouts()
+        app.processEvents()
+    assert (btn.x(), btn.y()) == snap, f"非幂等: {snap} -> {(btn.x(), btn.y())}"
