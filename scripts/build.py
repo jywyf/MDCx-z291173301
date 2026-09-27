@@ -413,7 +413,13 @@ class BuildManager:
             spec_file.unlink()
             logger.debug(spec_file)
 
-    def _run_command(self, args: list[str], success_msg: str | None = None, error_msg: str | None = None):
+    def _run_command(
+        self,
+        args: list[str],
+        success_msg: str | None = None,
+        error_msg: str | None = None,
+        env: dict[str, str] | None = None,
+    ):
         """
         运行命令并检查结果
 
@@ -421,6 +427,10 @@ class BuildManager:
             args (list[str]): 命令行参数列表
             success_msg (str | None): 成功时的消息. Defaults to None.
             error_msg (str | None, optional): 错误时的异常消息, 若 None 则不抛出异常. Defaults to None.
+            env (dict[str, str] | None, optional): 子进程环境变量, 透传给 subprocess.run.
+                用于让子进程以 UTF-8 模式输出（如设 PYTHONUTF8=1）, 否则子进程在
+                Windows GBK locale 下会自行抛 UnicodeEncodeError 而非被父进程兜底.
+                Defaults to None (继承当前进程环境).
 
         Raises:
             BuildError: 当命令执行失败且 error_msg 不为 None
@@ -440,6 +450,7 @@ class BuildManager:
                 text=True,
                 encoding="utf-8",
                 errors="replace",
+                env=env,
             )
             logger.debug(result.stdout.strip())
         except Exception as exc:

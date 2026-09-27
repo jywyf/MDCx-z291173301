@@ -43,13 +43,24 @@ def test_build_py_run_command_returns_stdout_text():
     """_run_command 在 Windows 默认 GBK 环境下也应能处理 UTF-8 输出。
 
     直接调用 _run_command 跑一个输出 UTF-8 中文的 python -c，验证解码不炸。
+
+    子进程必须显式给 PYTHONUTF8=1：CPython 子进程在 Windows 上按 locale 编码
+    （本机 cp936）写 stdout，'✅'(U+2705) 不在 cp936 内，子进程会先于父进程解码
+    就抛 UnicodeEncodeError 退出 1，父端 encoding/errors 根本兜不住。
+    设了之后子进程写 UTF-8 字节，才真正覆盖到父端 encoding="utf-8" 这条路径。
+    （Rust/Go 工具链如 ruff/pyinstaller 本就恒定输出 UTF-8，故这是真实场景。）
     """
+    import os
     import sys
 
     from scripts.build import BuildManager
 
     mgr = BuildManager(app_name="t", app_version="1", create_dmg=False, debug=False)
-    out = mgr._run_command([sys.executable, "-c", "print('中文✅')"], error_msg="boom")
+    out = mgr._run_command(
+        [sys.executable, "-c", "print('中文✅')"],
+        error_msg="boom",
+        env={**os.environ, "PYTHONUTF8": "1"},
+    )
     assert "中文" in out and "✅" in out
 
 
