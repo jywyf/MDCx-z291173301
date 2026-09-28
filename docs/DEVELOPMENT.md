@@ -392,7 +392,7 @@ ASIN 数据库（Excel `amazon_asin_database.xlsx`），搜索到的 ASIN 与番
   uv run pytest tests/                          # 全部测试
   uv run pytest tests/ --tb=short -m "not network" -x  # 仅不联网测试
   ```
-- **CI 平台分工**：Linux CI 执行 ruff、mypy、完整离线测试、数据库检查、线程安全检查和 UI 布局检查；Windows CI 在 `windows-latest` runner 上执行同一组离线 pytest，覆盖 Windows 路径和文件系统条件分支。Release 在 macOS、Windows 和 Ubuntu runner 分别构建 DMG、EXE 和 x86_64 Linux 单文件程序；手动工作流 `build-windows.yml` 与 `build-linux.yml` 可单独验证相应 PyInstaller 产物。
+- **CI 平台分工**：Linux CI 执行 ruff、mypy、完整离线测试、数据库检查和线程安全检查；Windows CI 在 `windows-2025` runner 上执行同一组离线 pytest 并做一次 PyInstaller 冒烟构建，覆盖 Windows 路径和文件系统条件分支。正式 Release 在 macOS、Windows 和 Ubuntu runner 分别构建 DMG、EXE 和 x86_64 Linux 单文件程序。
 - **CI 触发方式**：`ci.yaml` **只监听 `pull_request`（目标分支 main），不监听 `push`**。日常用 GitHub Desktop 直接把提交同步到 main，挂着 `push: main` 会让每次同步都在 Actions 列表里多出一条 `CI/CD Pipeline`；主干没有 PR 流程时这条 run 只是噪声。因此质量门禁改为「PR + 本地自检」两道：提交前必须过 `uv run quick-check`（ruff format/check + mypy），推送前过 `uv run check --skip-hook-install`（再加 pytest + check_thread_safety）。守卫见 `tests/test_ci_workflow_triggers.py`（锁"无 push 触发"+"PR 门禁与 ruff/mypy/pytest 步骤仍在"）。
 - **覆盖**：tests/crawlers/ 爬虫测试、tests/core/ 核心测试、NFO 测试、配置测试、`tests/test_ui_structure.py`（UI 结构）、`tests/test_actor_clean.py`（演员数据语义清洗）等
 - **演员数据清洗测试**（`tests/test_actor_clean.py`）：验证 `mdcx/utils/actor_clean.py` 对名字/别名字段的语义清洗——系列标签/年份/国籍/事务所标注剥离、作品标题剔除、悬空斜杠修复、占位符识别置空，同时确保罗马音/日文映射、读音、韩文别名等合法内容不被误伤。新数据写入（刮削写入 `update_actor_db_row`）前统一经此模块清洗
@@ -439,14 +439,14 @@ ASIN 数据库（Excel `amazon_asin_database.xlsx`），搜索到的 ASIN 与番
 | `docs/changelog.md` 首个版本段 `## vX.Y.Z (YYYY-MM-DD)` | 版本 = `VERSION_NAME`；日期 = `LOCAL_VERSION` 的日期 |
 | `uv.lock` 根包 `mdcx` 的 `version` | `X.Y.Z`（与 `pyproject.toml` 一致；CI 全平台 `uv sync --locked` 强校验，脱节即构建失败） |
 
-**事故记录（2026-09-27）**：曾只升 `pyproject.toml` 到 2.1.4、漏同步 `uv.lock`（根包仍锁 2.1.3），`build-py313.yml` 四个构建腿（windows-2025 / macos-latest / macos-15-intel / ubuntu-latest）齐刷刷在 `Install locked dependencies` 步 exit 1。教训：改版本号/日期必须走 `bump`（现已自动同步 lock），且以 `bump --check` + 版本一致性测试为准，不要手改单点。
+**事故记录（2026-09-27）**：曾只升 `pyproject.toml` 到 2.1.4、漏同步 `uv.lock`（根包仍锁 2.1.3），发版工作流四个构建腿（windows-2025 / macos-latest / macos-15-intel / ubuntu-latest）齐刷刷在 `Install locked dependencies` 步 exit 1。教训：改版本号/日期必须走 `bump`（现已自动同步 lock），且以 `bump --check` + 版本一致性测试为准，不要手改单点。
 
 **改版流程**
 
 1. 在 `docs/changelog.md` 顶部新建目标版本段并写条目；已发版旧段保留，未发版段被后续议题取代时合并重写成最终形态。
 2. `uv run bump --version <YYYYMMDD> --name X.Y.Z` 同步五处（`--dry-run` 预览、`--force` 免交互；`--name` 会连带同步 `uv.lock` 根包版本）；只校验用 `uv run bump --check`。
 3. 复核 `uv run pytest tests/test_version_consistency.py tests/test_version_metadata.py`。
-4. 打**纯数字** tag（= `LOCAL_VERSION`）触发 `build-py313.yml`。「已发版」的判据是数字 tag 已推送，而非 changelog 有没有该段。改用 3.14 发版时不要打 tag，改为手动触发 `build-py314.yml`——它建的是同一个纯数字 tag，两条流程不可对同一版本号并发发版。
+4. 打**纯数字** tag（= `LOCAL_VERSION`）触发 `.github/workflows/build-py314.yml`。「已发版」的判据是数字 tag 已推送，而非 changelog 有没有该段。同一版本号重复触发会覆盖更新同一条 Release（`overwrite: true`），不会多出第二条。
 
 版本号归属维护者，不擅自开新段。`scripts/build.py` 与主窗口不留版本常量：build 从 `consts.py` 读 `LOCAL_VERSION`（`--version` 可覆盖），界面统一展示 `VERSION_NAME (LOCAL_VERSION)`。
 
@@ -461,18 +461,24 @@ uv sync --locked --all-extras --dev
 uv run build --debug
 ```
 
-CI 工作流有两个，共用同一套四平台矩阵（macOS ARM64 / macOS Intel / Windows x86_64 / Linux x86_64）：
+正式发版只有一条工作流：`.github/workflows/build-py314.yml`（**Build and Release (Python 3.14)**），四平台矩阵（macOS ARM64 / macOS Intel / Windows x86_64 / Linux x86_64）全量构建，创建 tag 为纯数字 `LOCAL_VERSION` 的 Release，资产名 `MDCx-<版本>-<平台>-<架构>-<sha>`。**客户端自动更新只看这个 Release，资产名与 tag 形态都是对外契约，别动它。**
 
-- `.github/workflows/build-py313.yml`：**3.13 正式发版主流程**（tag `2*` 触发），创建 tag 为纯数字 `LOCAL_VERSION` 的正式 Release，资产名 `MDCx-<版本>-<平台>-<架构>-<sha>`。客户端自动更新只看这个 Release，别动它。
-- `.github/workflows/build-py314.yml`：**3.14 发版流程**，与 `build-py313.yml` 逐步骤对齐，只手动 `workflow_dispatch` 触发，输入只有版本号（留空取 `LOCAL_VERSION`）与 `prerelease`。四平台固定全量构建，`tag`、资产名、产物名、`permissions` 全与 `build-py313.yml` 一致。
+两种触发方式：
 
-3.14 流程与 `build-py313.yml` 只有四处差异：python-version 3.14、`UV_PYTHON: 3.14`、构建前用 `sys.version_info[:2] == (3, 14)` 断言解释器（防 uv 悄悄挑到 3.13）、`uv sync --locked` 失败自动回退 `uv sync` 重新解析（`uv.lock` 未必有 cp314 wheel）。另有三处比 `build-py313.yml` 更严的护栏：
+| 触发 | tag 取值 | prerelease |
+| --- | --- | --- |
+| `push` tag `2*`（如 `20260928`） | 推送的 ref | 一律 `false` |
+| `workflow_dispatch` 手动补发 | 输入的 `tag`，留空则取 `consts.py` 的 `LOCAL_VERSION` | 由 `prerelease` 输入决定 |
 
-1. **不监听 tag**：纯数字 tag 推送仍只触发 `build-py313.yml`。两条流程共用纯数字 tag 与 `overwrite: true`，对同一版本号并发发版会同时 `POST /releases` 撞 422，所以同一版本号只能用其中一条流程发。
-2. **缺产物不发版**：`build-app` 带 `continue-on-error`，`publish-release` 用 `if: !cancelled() && needs.build-app.result == 'success'` 把关（不能写 `success()`：`needs` 里任一失败腿都会让它整体跳过），并在上传前核对四个平台产物齐全——半成品 Release 比不发更糟。
-3. **并发不互杀**：`concurrency` 按 ref 分组且 `cancel-in-progress: false`，半路取消会留下缺资产的 Release。
+2026-09-28 起本工作流接过了原 3.13 主流程（`build-py313.yml`，更早叫 `release.yml`）的全部职责，那两个文件连同单平台手动构建的 `build-windows.yml` / `build-linux.yml` 一并删除——四平台矩阵已完全覆盖后两者的功能，3.13 侧不再需要独立流程。
 
-3.14 全平台转正后，把 `build-py313.yml` 切到 3.14 并删掉 `build-py314.yml` 即可。上述约定由 `tests/test_py314_release_workflow.py` 守住（纯文本断言，不引入 yaml 依赖），改这两个工作流后请一并跑 `uv run pytest tests/test_sr_bundling.py tests/test_py314_release_workflow.py`。
+3.14 专属三处：`python-version: 3.14`、`UV_PYTHON: 3.14`、构建前用 `sys.version_info[:2] == (3, 14)` 断言解释器（防 uv 悄悄挑到别的版本），以及 `uv sync --locked` 失败自动回退 `uv sync` 重新解析（`uv.lock` 未必有 cp314 wheel；只改 CI 临时工作树，不动仓库 lock）。另有三处护栏：
+
+1. **缺产物不发版**：`build-app` 带 `continue-on-error`，`publish-release` 用 `if: !cancelled() && needs.build-app.result == 'success'` 把关（不能写 `success()`：`needs` 里任一失败腿都会让它整体跳过），并在上传前核对四个平台产物齐全——半成品 Release 比不发更糟。
+2. **并发不互杀**：`concurrency` 按 ref 分组且 `cancel-in-progress: false`，半路取消会留下缺资产的 Release。
+3. **重跑幂等**：四个 Create Release 步骤都带 `overwrite: true`，同一版本号重复发版只更新同名资产，不新建。
+
+上述约定由 `tests/test_py314_release_workflow.py`（10 项）与 `tests/test_workflow_action_pins.py` 守住（纯文本断言，不引入 yaml 依赖），改工作流后请一并跑 `uv run pytest tests/test_sr_bundling.py tests/test_py314_release_workflow.py tests/test_workflow_action_pins.py`。
 
 
 依赖版本下限按 Python 3.14 抬过三处，改依赖时务必守住（否则 3.14 流水线的 `uv sync --locked` 会硬失败）：

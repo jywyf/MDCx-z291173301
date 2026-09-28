@@ -1,20 +1,26 @@
-name: Build and Release with Python3.14
+name: Build and Release (Python 3.14)
 
-# Python 3.14 发版流程，与 `build-py313.yml`（Python 3.13 正式发版）逐步骤对齐，
-# 只有四处差异：python-version 3.14、UV_PYTHON 锁 3.14、构建前断言解释器确实是 3.14、
-# `uv sync --locked` 失败时自动回退重新解析依赖。
+# 唯一的正式发版流程（Python 3.14，四平台一体包）。
 #
-# tag 同样取 `mdcx/consts.py` 的 LOCAL_VERSION（纯数字 YYYYMMDD），资产名同样是
-# `MDCx-<版本>-<平台>-<架构>-<sha>`：也就是说同一版本号只会有一条 Release，两个工作流
-# 不会各发一条。所以**同一个版本号只能用其中一个流程发版**——本文件只监听
-# `workflow_dispatch`，纯数字 tag 的推送仍然只触发 `build-py313.yml`，两者同时发会撞 422。
+# 2026-09-28 起本工作流接过了 `build-py313.yml`（3.13 发版主流程，原 `release.yml`）
+# 的全部职责，那两个文件连同单平台手动构建的 `build-windows.yml` / `build-linux.yml`
+# 一并删除——四平台矩阵已完全覆盖后两者的功能，3.13 侧不再需要独立流程。
+# 因此现在**只此一条发版路径**：推纯数字 tag 自动发，或手动 workflow_dispatch 发。
 #
-# 3.14 全平台转正后，把 `build-py313.yml` 切到 3.14 并删掉本文件即可（届时本文件与
-# build-py313.yml 只剩 python-version / UV_PYTHON / 断言 / relock 回退四处差异）。
+# 触发方式两种，tag 的取法见 `Resolve release metadata`：
+#   - `push` tag `2*`（纯数字 YYYYMMDD，如 20260928）→ 自动发正式版，tag 取推送的 ref
+#   - `workflow_dispatch` → 手动补发；`tag` 输入留空则取 `mdcx/consts.py` 的 LOCAL_VERSION
+# prerelease 只对手动触发有效（tag 推送一律发正式版）。
 #
-# 另有两处比 `build-py313.yml` 更严的发版护栏（发半成品 Release 比不发更糟）：
-# `build-app` 带 continue-on-error，`publish-release` 用 `needs.build-app.result` 把关，
-# 并在上传前核对四平台产物齐全。
+# tag 必须纯数字：`mdcx/base/web.py` 的 `check_version()` 遍历 releases 取第一个
+# `tag_name.isdigit()` 的值（`per_page=10`），非纯数字 tag 会被跳过，客户端自动更新
+# 永久失效。`Resolve release metadata` 里会硬校验，填错直接 exit 1。
+#
+# 三处护栏（发半成品 Release 比不发更糟）：
+#   1. `build-app` 带 continue-on-error，某平台翻车不阻塞其余平台
+#   2. `publish-release` 用 `!cancelled() && needs.build-app.result == 'success'` 把关
+#   3. 上传前核对四个平台产物齐全，不留半成品 Release
+#   另有 `concurrency` 按 ref 分组且 `cancel-in-progress: false`，半路取消同样会留下残缺资产。
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -27,6 +33,9 @@ permissions:
   contents: write
 
 on:
+  push:
+    tags:
+      - "2*"
   workflow_dispatch:
     inputs:
       tag:
@@ -39,9 +48,9 @@ on:
         default: "false"
 
 concurrency:
-  # 手动触发为主：同一分支的多个 run 排队执行，不取消正在构建/上传的 run
+  # 同一分支/同一 tag 的多个 run 排队执行，不取消正在构建/上传的 run
   # （半路取消会留下缺资产的 Release）。
-  group: build-py314-${{ github.ref }}
+  group: build-release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -109,8 +118,8 @@ jobs:
             tag=$(grep -oE 'LOCAL_VERSION[[:space:]]*=[[:space:]]*[0-9]+' mdcx/consts.py | grep -oE '[0-9]+')
           fi
 
-          # 与 build-py313.yml 同约束：tag 必须是纯数字(供 check_version 的 int(tag_name) 使用),
-          # 非数字(如 v2.0.0)会导致自动更新永久失效。手动填错直接报错退出, 避免建出破坏性 release。
+          # tag 必须是纯数字(供 check_version 的 int(tag_name) 使用)，
+          # 非数字(如 v2.0.0)会导致自动更新永久失效。填错直接报错退出, 避免建出破坏性 release。
           if ! [[ "$tag" =~ ^[0-9]+$ ]]; then
             echo "::error::Release tag 必须是纯数字 YYYYMMDD（供 check_version 的 int(tag) 使用）, 当前为 '$tag'。请检查 mdcx/consts.py 的 LOCAL_VERSION 或手动输入。"
             exit 1
@@ -145,7 +154,7 @@ jobs:
           libxcb-cursor0 libxcb-xinerama0 libxcb-icccm4 libxcb-image0
           libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0
 
-      # 3.14 唯一比 build-py313.yml 多的一步：`uv.lock` 未必有 cp314 wheel，`--locked` 会硬失败，
+      # 3.14 特有的回退：`uv.lock` 未必有 cp314 wheel，`--locked` 会硬失败，
       # 故失败时自动回退重新解析（只影响本次 CI 的临时工作树，检出为干净树，不改仓库 uv.lock）。
       # 写死版本若无 cp314 wheel 仍会失败——那属于需要升级依赖的硬阻塞
       # （见 tests/test_py314_dependency_floors.py）。
@@ -279,11 +288,11 @@ jobs:
             exit 1
           fi
 
-          # 纯数字 tag 与 build-py313.yml 共用命名空间：若 3.13 正式版已发过这个版本号，
+          # 本工作流是唯一的发版路径，所以 tag 已存在只可能是「重跑」或「手动补发同版本号」：
           # 下面的 upload-release-action 会以 overwrite 更新同一条 Release 的资产，
-          # 这里只提示，避免把覆盖当成新建。
+          # 这里提示一下，避免把覆盖更新误当成新建。
           if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
-            echo "::warning::tag '$tag' 已存在，本次会更新该 Release（overwrite: true），注意别与 build-py313.yml 对同一版本号并发发版。"
+            echo "::warning::tag '$tag' 已存在，本次是覆盖更新该 Release 的资产（overwrite: true），不是新建。"
           fi
 
           version_name=$(grep -oE 'VERSION_NAME[[:space:]]*=[[:space:]]*"[^"]+"' mdcx/consts.py | grep -oE '"[^"]+"' | tr -d '"')

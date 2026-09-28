@@ -2,10 +2,10 @@
 
 两件事：
 
-1. **YAML 可解析**：工作流改名（如 `release.yml` → `build-py313.yml`）极易让测试里的
-   路径常量悄悄指向不存在的文件——`test_py314_release_workflow.py` 就这么炸过一次
-   （`FileNotFoundError`）。这里对 `.github/workflows/` 下每个文件做一次
-   `yaml.safe_load`，改名后当天即红，不必等 CI 或发版。
+1. **YAML 可解析**：工作流删改（如 2026-09-28 删掉 `build-py313.yml` / `build-windows.yml`
+   / `build-linux.yml`）极易让测试里的路径常量悄悄指向已不存在的文件——
+   `test_py314_release_workflow.py` 就这么炸过一次（`FileNotFoundError`）。这里对
+   `.github/workflows/` 下每个文件做一次 `yaml.safe_load`，删改后当天即红，不必等 CI 或发版。
 2. **Node 20 弃用**：`actions/cache@v4` 跑在 Node 20 runtime 上，2025-09-19 起 GitHub
    弃用该 runtime，每次构建都会刷
    `Node.js 20 is deprecated ... being forced to run on Node.js 24: actions/cache@v4`。
