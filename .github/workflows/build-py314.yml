@@ -1,4 +1,4 @@
-name: Build and Release (Python 3.14)
+name: Build and Release Python3.14
 
 # 唯一的正式发版流程（Python 3.14，四平台一体包）。
 #
