@@ -1,18 +1,18 @@
 name: Build and Release with Python3.14
 
-# Python 3.14 发版流程，与 `release.yml`（Python 3.13 正式发版）逐步骤对齐，
+# Python 3.14 发版流程，与 `build-py313.yml`（Python 3.13 正式发版）逐步骤对齐，
 # 只有四处差异：python-version 3.14、UV_PYTHON 锁 3.14、构建前断言解释器确实是 3.14、
 # `uv sync --locked` 失败时自动回退重新解析依赖。
 #
 # tag 同样取 `mdcx/consts.py` 的 LOCAL_VERSION（纯数字 YYYYMMDD），资产名同样是
 # `MDCx-<版本>-<平台>-<架构>-<sha>`：也就是说同一版本号只会有一条 Release，两个工作流
 # 不会各发一条。所以**同一个版本号只能用其中一个流程发版**——本文件只监听
-# `workflow_dispatch`，纯数字 tag 的推送仍然只触发 `release.yml`，两者同时发会撞 422。
+# `workflow_dispatch`，纯数字 tag 的推送仍然只触发 `build-py313.yml`，两者同时发会撞 422。
 #
-# 3.14 全平台转正后，把 `release.yml` 切到 3.14 并删掉本文件即可（届时本文件与
-# release.yml 只剩 python-version / UV_PYTHON / 断言 / relock 回退四处差异）。
+# 3.14 全平台转正后，把 `build-py313.yml` 切到 3.14 并删掉本文件即可（届时本文件与
+# build-py313.yml 只剩 python-version / UV_PYTHON / 断言 / relock 回退四处差异）。
 #
-# 另有两处比 `release.yml` 更严的发版护栏（发半成品 Release 比不发更糟）：
+# 另有两处比 `build-py313.yml` 更严的发版护栏（发半成品 Release 比不发更糟）：
 # `build-app` 带 continue-on-error，`publish-release` 用 `needs.build-app.result` 把关，
 # 并在上传前核对四平台产物齐全。
 
@@ -109,7 +109,7 @@ jobs:
             tag=$(grep -oE 'LOCAL_VERSION[[:space:]]*=[[:space:]]*[0-9]+' mdcx/consts.py | grep -oE '[0-9]+')
           fi
 
-          # 与 release.yml 同约束：tag 必须是纯数字(供 check_version 的 int(tag_name) 使用),
+          # 与 build-py313.yml 同约束：tag 必须是纯数字(供 check_version 的 int(tag_name) 使用),
           # 非数字(如 v2.0.0)会导致自动更新永久失效。手动填错直接报错退出, 避免建出破坏性 release。
           if ! [[ "$tag" =~ ^[0-9]+$ ]]; then
             echo "::error::Release tag 必须是纯数字 YYYYMMDD（供 check_version 的 int(tag) 使用）, 当前为 '$tag'。请检查 mdcx/consts.py 的 LOCAL_VERSION 或手动输入。"
@@ -145,7 +145,7 @@ jobs:
           libxcb-cursor0 libxcb-xinerama0 libxcb-icccm4 libxcb-image0
           libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0
 
-      # 3.14 唯一比 release.yml 多的一步：`uv.lock` 未必有 cp314 wheel，`--locked` 会硬失败，
+      # 3.14 唯一比 build-py313.yml 多的一步：`uv.lock` 未必有 cp314 wheel，`--locked` 会硬失败，
       # 故失败时自动回退重新解析（只影响本次 CI 的临时工作树，检出为干净树，不改仓库 uv.lock）。
       # 写死版本若无 cp314 wheel 仍会失败——那属于需要升级依赖的硬阻塞
       # （见 tests/test_py314_dependency_floors.py）。
@@ -161,7 +161,7 @@ jobs:
       # 缓存由 update-sr-tools.yml 定期刷新；命中时 fetch 脚本幂等跳过下载，未命中则直接拉取。
       - name: Restore SR tools cache (Windows/Linux)
         if: ${{ matrix.build == 'windows' || matrix.build == 'linux' }}
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: build/sr_tools
           key: sr-tools-${{ matrix.build }}
@@ -279,11 +279,11 @@ jobs:
             exit 1
           fi
 
-          # 纯数字 tag 与 release.yml 共用命名空间：若 3.13 正式版已发过这个版本号，
+          # 纯数字 tag 与 build-py313.yml 共用命名空间：若 3.13 正式版已发过这个版本号，
           # 下面的 upload-release-action 会以 overwrite 更新同一条 Release 的资产，
           # 这里只提示，避免把覆盖当成新建。
           if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
-            echo "::warning::tag '$tag' 已存在，本次会更新该 Release（overwrite: true），注意别与 release.yml 对同一版本号并发发版。"
+            echo "::warning::tag '$tag' 已存在，本次会更新该 Release（overwrite: true），注意别与 build-py313.yml 对同一版本号并发发版。"
           fi
 
           version_name=$(grep -oE 'VERSION_NAME[[:space:]]*=[[:space:]]*"[^"]+"' mdcx/consts.py | grep -oE '"[^"]+"' | tr -d '"')

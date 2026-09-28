@@ -439,14 +439,14 @@ ASIN 数据库（Excel `amazon_asin_database.xlsx`），搜索到的 ASIN 与番
 | `docs/changelog.md` 首个版本段 `## vX.Y.Z (YYYY-MM-DD)` | 版本 = `VERSION_NAME`；日期 = `LOCAL_VERSION` 的日期 |
 | `uv.lock` 根包 `mdcx` 的 `version` | `X.Y.Z`（与 `pyproject.toml` 一致；CI 全平台 `uv sync --locked` 强校验，脱节即构建失败） |
 
-**事故记录（2026-09-27）**：曾只升 `pyproject.toml` 到 2.1.4、漏同步 `uv.lock`（根包仍锁 2.1.3），`release.yml` 四个构建腿（windows-2025 / macos-latest / macos-15-intel / ubuntu-latest）齐刷刷在 `Install locked dependencies` 步 exit 1。教训：改版本号/日期必须走 `bump`（现已自动同步 lock），且以 `bump --check` + 版本一致性测试为准，不要手改单点。
+**事故记录（2026-09-27）**：曾只升 `pyproject.toml` 到 2.1.4、漏同步 `uv.lock`（根包仍锁 2.1.3），`build-py313.yml` 四个构建腿（windows-2025 / macos-latest / macos-15-intel / ubuntu-latest）齐刷刷在 `Install locked dependencies` 步 exit 1。教训：改版本号/日期必须走 `bump`（现已自动同步 lock），且以 `bump --check` + 版本一致性测试为准，不要手改单点。
 
 **改版流程**
 
 1. 在 `docs/changelog.md` 顶部新建目标版本段并写条目；已发版旧段保留，未发版段被后续议题取代时合并重写成最终形态。
 2. `uv run bump --version <YYYYMMDD> --name X.Y.Z` 同步五处（`--dry-run` 预览、`--force` 免交互；`--name` 会连带同步 `uv.lock` 根包版本）；只校验用 `uv run bump --check`。
 3. 复核 `uv run pytest tests/test_version_consistency.py tests/test_version_metadata.py`。
-4. 打**纯数字** tag（= `LOCAL_VERSION`）触发 `release.yml`。「已发版」的判据是数字 tag 已推送，而非 changelog 有没有该段。改用 3.14 发版时不要打 tag，改为手动触发 `build-py314.yml`——它建的是同一个纯数字 tag，两条流程不可对同一版本号并发发版。
+4. 打**纯数字** tag（= `LOCAL_VERSION`）触发 `build-py313.yml`。「已发版」的判据是数字 tag 已推送，而非 changelog 有没有该段。改用 3.14 发版时不要打 tag，改为手动触发 `build-py314.yml`——它建的是同一个纯数字 tag，两条流程不可对同一版本号并发发版。
 
 版本号归属维护者，不擅自开新段。`scripts/build.py` 与主窗口不留版本常量：build 从 `consts.py` 读 `LOCAL_VERSION`（`--version` 可覆盖），界面统一展示 `VERSION_NAME (LOCAL_VERSION)`。
 
@@ -463,16 +463,16 @@ uv run build --debug
 
 CI 工作流有两个，共用同一套四平台矩阵（macOS ARM64 / macOS Intel / Windows x86_64 / Linux x86_64）：
 
-- `.github/workflows/release.yml`：**3.13 正式发版主流程**（tag `2*` 触发），创建 tag 为纯数字 `LOCAL_VERSION` 的正式 Release，资产名 `MDCx-<版本>-<平台>-<架构>-<sha>`。客户端自动更新只看这个 Release，别动它。
-- `.github/workflows/build-py314.yml`：**3.14 发版流程**，与 `release.yml` 逐步骤对齐，只手动 `workflow_dispatch` 触发，输入只有版本号（留空取 `LOCAL_VERSION`）与 `prerelease`。四平台固定全量构建，`tag`、资产名、产物名、`permissions` 全与 `release.yml` 一致。
+- `.github/workflows/build-py313.yml`：**3.13 正式发版主流程**（tag `2*` 触发），创建 tag 为纯数字 `LOCAL_VERSION` 的正式 Release，资产名 `MDCx-<版本>-<平台>-<架构>-<sha>`。客户端自动更新只看这个 Release，别动它。
+- `.github/workflows/build-py314.yml`：**3.14 发版流程**，与 `build-py313.yml` 逐步骤对齐，只手动 `workflow_dispatch` 触发，输入只有版本号（留空取 `LOCAL_VERSION`）与 `prerelease`。四平台固定全量构建，`tag`、资产名、产物名、`permissions` 全与 `build-py313.yml` 一致。
 
-3.14 流程与 `release.yml` 只有四处差异：python-version 3.14、`UV_PYTHON: 3.14`、构建前用 `sys.version_info[:2] == (3, 14)` 断言解释器（防 uv 悄悄挑到 3.13）、`uv sync --locked` 失败自动回退 `uv sync` 重新解析（`uv.lock` 未必有 cp314 wheel）。另有三处比 `release.yml` 更严的护栏：
+3.14 流程与 `build-py313.yml` 只有四处差异：python-version 3.14、`UV_PYTHON: 3.14`、构建前用 `sys.version_info[:2] == (3, 14)` 断言解释器（防 uv 悄悄挑到 3.13）、`uv sync --locked` 失败自动回退 `uv sync` 重新解析（`uv.lock` 未必有 cp314 wheel）。另有三处比 `build-py313.yml` 更严的护栏：
 
-1. **不监听 tag**：纯数字 tag 推送仍只触发 `release.yml`。两条流程共用纯数字 tag 与 `overwrite: true`，对同一版本号并发发版会同时 `POST /releases` 撞 422，所以同一版本号只能用其中一条流程发。
+1. **不监听 tag**：纯数字 tag 推送仍只触发 `build-py313.yml`。两条流程共用纯数字 tag 与 `overwrite: true`，对同一版本号并发发版会同时 `POST /releases` 撞 422，所以同一版本号只能用其中一条流程发。
 2. **缺产物不发版**：`build-app` 带 `continue-on-error`，`publish-release` 用 `if: !cancelled() && needs.build-app.result == 'success'` 把关（不能写 `success()`：`needs` 里任一失败腿都会让它整体跳过），并在上传前核对四个平台产物齐全——半成品 Release 比不发更糟。
 3. **并发不互杀**：`concurrency` 按 ref 分组且 `cancel-in-progress: false`，半路取消会留下缺资产的 Release。
 
-3.14 全平台转正后，把 `release.yml` 切到 3.14 并删掉 `build-py314.yml` 即可。上述约定由 `tests/test_py314_release_workflow.py` 守住（纯文本断言，不引入 yaml 依赖），改这两个工作流后请一并跑 `uv run pytest tests/test_sr_bundling.py tests/test_py314_release_workflow.py`。
+3.14 全平台转正后，把 `build-py313.yml` 切到 3.14 并删掉 `build-py314.yml` 即可。上述约定由 `tests/test_py314_release_workflow.py` 守住（纯文本断言，不引入 yaml 依赖），改这两个工作流后请一并跑 `uv run pytest tests/test_sr_bundling.py tests/test_py314_release_workflow.py`。
 
 
 依赖版本下限按 Python 3.14 抬过三处，改依赖时务必守住（否则 3.14 流水线的 `uv sync --locked` 会硬失败）：

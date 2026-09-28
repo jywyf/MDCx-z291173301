@@ -131,10 +131,11 @@
 - Category: 环境配置
 - Instructions:
   - **只有「字符串动态导入」（`importlib.import_module`/`__import__`）才必须显式 --hidden-import**；函数体内静态 import 会被正常收集。`tests/test_build_hidden_imports.py` 哨兵锁定全仓动态导入 ⊆ hidden-import；CI Windows job 有 PyInstaller 冒烟。
-  - **一体包硬失败后，所有调用 `scripts/build.py` 的 Windows/Linux 工作流必须先 `fetch_sr_tools`**（2026-09-21 `b077b07c` 实证）：Code Quality 与 Windows 测试全绿，冒烟步因缺 `build/sr_tools` 直接 BuildError。`ci.yaml` 冒烟、`build-windows.yml`、`build-linux.yml` 与 `release.yml` 是四条独立打包入口，改 fail-closed 时四条一起补「cache + fetch 再 build」；`tests/test_sr_bundling.py::test_packaging_workflows_fetch_sr_tools_before_build` 锁顺序。目录存在但无 realesrgan/waifu2x 子目录同样硬失败（空 `--add-binary` 会静默漏打）。
+  - **一体包硬失败后，所有调用 `scripts/build.py` 的 Windows/Linux 工作流必须先 `fetch_sr_tools`**（2026-09-21 `b077b07c` 实证）：Code Quality 与 Windows 测试全绿，冒烟步因缺 `build/sr_tools` 直接 BuildError。`ci.yaml` 冒烟、`build-windows.yml`、`build-linux.yml`、`build-py313.yml` 与 `build-py314.yml` 是五条独立打包入口，改 fail-closed 时五条一起补「cache + fetch 再 build」；`tests/test_sr_bundling.py::test_packaging_workflows_fetch_sr_tools_before_build` 锁顺序。目录存在但无 realesrgan/waifu2x 子目录同样硬失败（空 `--add-binary` 会静默漏打）。
   - EXCLUDED_MODULES 中 rich/typer 只供构建/CLI；Windows curl_cffi.libs 需显式 --add-binary。
   - **GitHub Actions 两坑**：①runner 标签会整体下线（macos-13 已关闭，Intel 接替 `macos-15-intel`，2027 秋全退役）；②`astral-sh/setup-uv` 无裸主版本浮动标签（写 @v10 报错，须全版本号）。
-  - **Release 发版**：推纯数字 tag 触发 release.yml（macOS aarch64/x86_64 + Windows + Linux 矩阵，正文自动取 changelog 当前段）；产物名 `MDCx-<tag>-<平台>-<arch>-<完整40位sha>.<exe|dmg>`，macOS DMG 按架构命名；Windows zip 版走 `package-trawl.yml` 单独管道。发版前确认 consts.py LOCAL_VERSION/VERSION_NAME 与 changelog 一致（bump.py 见上）。
+  - **Release 发版**：推纯数字 tag 触发 `build-py313.yml`（macOS aarch64/x86_64 + Windows + Linux 矩阵，正文自动取 changelog 当前段）；产物名 `MDCx-<tag>-<平台>-<arch>-<完整40位sha>.<exe|dmg>`，macOS DMG 按架构命名；Windows zip 版走 `package-trawl.yml` 单独管道。发版前确认 consts.py LOCAL_VERSION/VERSION_NAME 与 changelog 一致（bump.py 见上）。
+  - **Actions 版本**：Node 20 已于 2025-09-19 弃用，`actions/cache@v4` 在 runner 上会刷 deprecation 警告（不影响成败）。本仓库统一用 `actions/cache@v6`（v5 起转 node24 runtime，v6 是 ESM 迁移，输入 `path`/`key` 未变），最低要求 runner ≥ 2.327.1——本仓库全为 GitHub 托管 runner，无自建，故无风险。
 
 ## 日亚 ASIN 数据库与校验方法论
 

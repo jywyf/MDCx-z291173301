@@ -120,7 +120,7 @@ jobs:
       # 缓存由 update-sr-tools.yml 定期刷新；命中时 fetch 脚本幂等跳过下载，未命中则直接拉取。
       - name: Restore SR tools cache (Windows/Linux)
         if: ${{ matrix.build == 'windows' || matrix.build == 'linux' }}
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: build/sr_tools
           key: sr-tools-${{ matrix.build }}

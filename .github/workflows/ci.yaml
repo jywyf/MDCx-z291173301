@@ -178,7 +178,7 @@ jobs:
       # 缓存由 update-sr-tools.yml 预热；命中时 fetch 幂等跳过，未命中则当场拉取。
       - name: Restore SR tools cache
         if: steps.changes.outputs.code_changed == 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: build/sr_tools
           key: sr-tools-windows

@@ -1,6 +1,6 @@
-"""Python 3.14 发版工作流与 `release.yml` 的一致性守卫（`.github/workflows/build-py314.yml`）。
+"""Python 3.14 发版工作流与 `build-py313.yml` 的一致性守卫（`.github/workflows/build-py314.yml`）。
 
-背景：`build-py314.yml` 是 `release.yml`（Python 3.13 正式发版）的 3.14 孪生流程，
+背景：`build-py314.yml` 是 `build-py313.yml`（Python 3.13 正式发版）的 3.14 孪生流程，
 两者逐步骤对齐（同样的四平台矩阵、同样的纯数字 tag、同样的资产命名），差别只有四处：
 `python-version` 3.14、`UV_PYTHON` 锁 3.14、构建前断言解释器确实是 3.14、
 `uv sync --locked` 失败自动回退重新解析。任何一处被改坏都会伤到发版或客户端自动更新：
@@ -9,7 +9,7 @@
    `check_version()` 遍历 releases 取第一个 `tag_name.isdigit()` 的值（`per_page=10`），
    非纯数字 tag 会被跳过，自动更新就永久失效。故不得回退到早期版本的 `py314-<版本号>`
    预览 tag 方案。
-2. **不监听 tag、只手动触发**：tag 推送是 `release.yml` 的触发条件，两者共用纯数字
+2. **不监听 tag、只手动触发**：tag 推送是 `build-py313.yml` 的触发条件，两者共用纯数字
    命名空间，同一版本号并发发版会同时 `POST /releases` 撞 422。
 3. **输入只有 tag 与 prerelease**：平台固定四平台（无 `platforms` 开关）、发版不再有
    `publish` 勾选、relock 回退不再有 true/false 开关（3.14 恒允许回退）。
@@ -25,7 +25,7 @@ from pathlib import Path
 
 _ROOT = Path(__file__).parent.parent
 _WORKFLOW = _ROOT / ".github" / "workflows" / "build-py314.yml"
-_RELEASE = _ROOT / ".github" / "workflows" / "release.yml"
+_PY313 = _ROOT / ".github" / "workflows" / "build-py313.yml"
 
 # 一次 Release 覆盖的平台资产（macOS 两架构共用一个构建目录，文件名由 build-app 决定）
 _ASSET_FILES = (
@@ -37,7 +37,7 @@ _ASSET_FILES = (
 
 _RELEASE_STEP_COUNT = 4
 
-# 固定四平台矩阵（与 release.yml 同一套 runner 组合，actions/runner#1985）
+# 固定四平台矩阵（与 build-py313.yml 同一套 runner 组合，actions/runner#1985）
 _MATRIX_ITEMS = (
     '{"build": "macos", "os": "macos-latest", "arch": "aarch64"}',
     '{"build": "macos", "os": "macos-15-intel", "arch": "x86_64"}',
@@ -60,22 +60,22 @@ def test_tag_is_plain_numeric_not_py314_prefixed():
     )
     # 只查真正的配置行：工作流名/并发组里的 build-py314- 是合法的
     assert re.search(r"(?m)^\s+asset_name:.*py314", text) is None, (
-        "资产名不得带 -py314- 段：与 release.yml 共用纯数字 tag 与 `MDCx-<版本>-<平台>-"
+        "资产名不得带 -py314- 段：与 build-py313.yml 共用纯数字 tag 与 `MDCx-<版本>-<平台>-"
         "<架构>-<sha>` 命名，两条流程会更新同一条 Release 的同名资产"
     )
     assert 'echo "tag=$tag" >> "$GITHUB_OUTPUT"' in text, "metadata 步骤应回输出解析出的纯数字 tag"
     assert text.count("tag: ${{ steps.metadata.outputs.tag }}") == _RELEASE_STEP_COUNT, (
         "四个 Create Release 步骤都应引用纯数字 tag"
     )
-    assert re.search(r"\^\[0-9\]\+\$", text), "tag 必须做纯数字校验（同 release.yml 的 int(tag) 约束）"
+    assert re.search(r"\^\[0-9\]\+\$", text), "tag 必须做纯数字校验（同 build-py313.yml 的 int(tag) 约束）"
 
 
 def test_workflow_does_not_listen_to_tags():
-    """纯数字 tag 的推送只属于 release.yml；本工作流只手动触发。"""
+    """纯数字 tag 的推送只属于 build-py313.yml；本工作流只手动触发。"""
     text = _workflow()
 
     assert re.search(r"(?m)^  push:$", text) is None, (
-        "build-py314.yml 不得监听 push；tag `2*` 是 release.yml 正式发版的触发条件，"
+        "build-py314.yml 不得监听 push；tag `2*` 是 build-py313.yml 正式发版的触发条件，"
         "两者对同一版本号并发 POST /releases 会撞 422"
     )
     assert re.search(r"(?m)^    tags:\s*$", text) is None, "build-py314.yml 不得监听 tag"
@@ -91,14 +91,14 @@ def test_only_tag_and_prerelease_inputs():
     for reference in ("inputs.platforms", "inputs.publish", "inputs.allow_relock"):
         assert reference not in text, f"不应再引用 {reference}"
     assert re.search(r"(?m)^      tag:$", text) is not None, "应保留 tag 输入"
-    assert re.search(r"(?m)^      prerelease:$", text) is not None, "应保留 prerelease 输入（同 release.yml）"
+    assert re.search(r"(?m)^      prerelease:$", text) is not None, "应保留 prerelease 输入（同 build-py313.yml）"
     assert re.search(r"(?m)^\s+prerelease: \$\{\{ steps\.metadata\.outputs\.prerelease \}\}$", text), (
         "四个 Create Release 步骤都应沿用 metadata 解析出的 prerelease"
     )
 
 
 def test_matrix_always_builds_all_four_platforms():
-    """平台不再可选，矩阵固定四平台且与 release.yml 同一套 runner 组合。"""
+    """平台不再可选，矩阵固定四平台且与 build-py313.yml 同一套 runner 组合。"""
     text = _workflow()
 
     for item in _MATRIX_ITEMS:
@@ -110,8 +110,8 @@ def test_matrix_always_builds_all_four_platforms():
         "mdcx-windows-${{ matrix.arch }}",
         "mdcx-linux-${{ matrix.arch }}",
     ):
-        assert f"name: {asset_name}" in text, f"产物名应与 release.yml 一致：{asset_name}"
-    assert "pattern: mdcx-*" in text, "下载产物的 pattern 应与 release.yml 一致"
+        assert f"name: {asset_name}" in text, f"产物名应与 build-py313.yml 一致：{asset_name}"
+    assert "pattern: mdcx-*" in text, "下载产物的 pattern 应与 build-py313.yml 一致"
 
 
 def test_python_314_pins_and_relock_fallback():
@@ -158,7 +158,7 @@ def test_release_uploads_are_idempotent():
     text = _workflow()
 
     assert text.count("overwrite: true") >= _RELEASE_STEP_COUNT, (
-        "Create Release 步骤需要 overwrite: true（同 release.yml），重跑时才不会失败"
+        "Create Release 步骤需要 overwrite: true（同 build-py313.yml），重跑时才不会失败"
     )
     assert "contents: write" in text, "创建 Release 需要 permissions: contents: write"
     assert text.count("- name: Create Release - ") == _RELEASE_STEP_COUNT, (
@@ -167,9 +167,9 @@ def test_release_uploads_are_idempotent():
 
 
 def test_asset_names_match_release_workflow():
-    """资产命名必须与 release.yml 一致，否则两个流程对同一 tag 的资产处理会分叉。"""
+    """资产命名必须与 build-py313.yml 一致，否则两个流程对同一 tag 的资产处理会分叉。"""
     text = _workflow()
-    release = _RELEASE.read_text(encoding="utf-8")
+    release = _PY313.read_text(encoding="utf-8")
     expected = (
         "asset_name: MDCx-${{ steps.metadata.outputs.tag }}-macos-aarch64-${{ github.sha }}.dmg",
         "asset_name: MDCx-${{ steps.metadata.outputs.tag }}-macos-x86_64-${{ github.sha }}.dmg",
@@ -178,9 +178,9 @@ def test_asset_names_match_release_workflow():
     )
 
     for asset_name in expected:
-        assert asset_name in text, f"3.14 工作流缺少与 release.yml 一致的资产名：{asset_name}"
-        assert asset_name in release, f"release.yml 不再使用该资产名，两个流程已分叉：{asset_name}"
+        assert asset_name in text, f"3.14 工作流缺少与 build-py313.yml 一致的资产名：{asset_name}"
+        assert asset_name in release, f"build-py313.yml 不再使用该资产名，两个流程已分叉：{asset_name}"
     assert "release_name: ${{ steps.metadata.outputs.name }}" in text, "标题应沿用 metadata 的解析结果"
     assert 'echo "name=${version_name} (${tag})" >> "$GITHUB_OUTPUT"' in text, (
-        "Release 标题应与 release.yml 相同（`VERSION_NAME (版本号)`）"
+        "Release 标题应与 build-py313.yml 相同（`VERSION_NAME (版本号)`）"
     )

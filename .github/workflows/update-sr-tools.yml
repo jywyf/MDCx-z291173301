@@ -2,7 +2,7 @@
 #
 # 工具二进制不入库：打包时由 scripts/fetch_sr_tools.py 从官方 GitHub Release 拉取，
 # 校验 sha256 后解压到 build/sr_tools。这里按月预热 actions/cache，
-# 让 release.yml / package-trawl.yml 打包时免下载、提速构建。
+# 让 build-py313.yml / build-py314.yml / package-trawl.yml 打包时免下载、提速构建。
 #
 # 刷新失败（上游重新打包导致 sha256 不匹配）会让作业变红并保留旧缓存，
 # 避免坏包扩散到发布产物。
@@ -56,7 +56,7 @@ jobs:
             libglib2.0-0 libegl1 libgl1 libfontconfig1
 
       - name: Cache SR tools
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: build/sr_tools
           key: sr-tools-${{ matrix.build }}
