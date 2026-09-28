@@ -462,6 +462,14 @@ uv run build --debug
 
 CI 工作流：`.github/workflows/release.yml` 是发版主流程（Python 3.13，tag `2*` 触发并创建 Release）；`.github/workflows/build-py314.yml` 是 Python 3.14 兼容性构建（`workflow_dispatch` + main 推送触发），只上传 `py314-*` 产物、**不创建 Release**、不改 `release.yml`，`build-app` 带 `continue-on-error` 以免 3.14 依赖生态未就绪时阻塞主干。全平台确认可编译后，才把 `release.yml` 的 `python-version` 切到 3.14 并删除该文件。
 
+依赖版本下限按 Python 3.14 抬过三处，改依赖时务必守住（否则 3.14 流水线的 `uv sync --locked` 会硬失败）：
+
+- `pyinstaller>=6.16.0,<7`：6.14.2 的元数据是 `requires-python = ">=3.8,<3.14"`，3.14 上装不上。
+- `av>=15.1.0`：15.0.0 只有 cp39~cp313 的 wheel，3.14 上会退回源码编译（需 FFmpeg 开发库）。
+- `aiofiles==25.1.0`：25.1.0 起官方测试并支持 3.14。
+
+其余依赖已逐条核对，3.14 直接可用、无需动：`pyqt6`（cp310-abi3）、`opencv-contrib-python-headless`（cp37-abi3）、`curl-cffi`（cp310-abi3）、`aiohttp`/`lxml`/`numpy`/`pillow`/`pydantic-core`/`mypy`（有 cp314 wheel）、`pyinstaller`/`ruff`（`py3-none`）、`oshash`/`zhconv`（PyPI 上只有 sdist，但上游是**纯 Python**、无 C 扩展，不会编译）。核对口径：看 PyPI `releases[版本].urls` 的 tag 是否为 `cp314-*` / `*-abi3-*` / `*-none-*`，并读 `requires_python` 上界。改完依赖记得 `uv lock`（CI 用 `uv sync --locked` 强校验），`requires-python` 保持 `>=3.13.4`（不能带 upper bound），3.13 仍是基线。`tests/test_py314_dependency_floors.py` 守着上述三条下限、`uv.lock` 与 `pyproject.toml` 的声明同步、以及 `requires-python` 无上界。
+
 ## 迁移指南
 
 ### 旧版爬虫 → GenericBaseCrawler

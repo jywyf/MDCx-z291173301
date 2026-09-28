@@ -15,10 +15,10 @@ description = "mdcx"
 readme = "README.md"
 requires-python = ">=3.13.4" # we need os.path.ALLOW_MISSING and type parameter defaults
 dependencies = [
-    "aiofiles==25.1.0",  # 24.1.0 早于 3.14; 25.1.0(2025-10-09)起官方测试并支持 Python 3.14
+    "aiofiles==24.1.0",
     "aiohttp>=3.14.3",  # GHSA-mfx4-hv73-q22v 等 HTTP smuggling/解析器漏洞修复
     "aiolimiter==1.2.1",
-    "av>=15.1.0",  # 15.1.0 起才提供 cp314 wheel; 15.0.0 只有 cp39~cp313, 3.14 上会退回源码编译(需 FFmpeg)
+    "av>=15.0.0",
     "beautifulsoup4==4.13.4",
     "curl-cffi>=0.15.0",  # GHSA-qw2m-4pqf-rmpp (CVE-2026-33752) 重定向 SSRF 修复; 0.12 起 sentinel 更名已兼容
     "httpx[socks]>=0.28.1",
@@ -56,7 +56,7 @@ dev = [
     "numpy>=2.4.3",
     "opencv-contrib-python-headless>=4.13.0.92",
     "pre-commit>=4.2.0",
-    "pyinstaller>=6.16.0,<7",  # 6.14.2 的 requires-python 是 <3.14, 在 3.14 上直接装不上; 6.16.0 起支持 3.14
+    "pyinstaller>=6.14.2,<7",
     "pyright>=1.1.400",
     "pytest>=9.0.3",  # GHSA-6w46-j5rx-g56g tmpdir 处理漏洞 (dev)
     "tornado>=6.5.8",  # GHSA-8423-8fgw-73vq / mpf4-983q-p7j4 / wwv5-g3v4-889x (ipykernel 传递依赖)
