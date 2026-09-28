@@ -425,7 +425,7 @@ ASIN 数据库（Excel `amazon_asin_database.xlsx`），搜索到的 ASIN 与番
 
 **两处定义（`mdcx/consts.py`）**
 
-- `LOCAL_VERSION`：纯数字 `YYYYMMDD`，用于版本比较、更新检查与构建；**GitHub release 的 Tag 必须是同值纯数字**（`check_version` 对 `tag_name` 做 `int()`，`vX.Y.Z` 形态的标签会被直接跳过）。
+- `LOCAL_VERSION`：纯数字 `YYYYMMDD`，用于版本比较、更新检查与构建；**正式 GitHub release 的 Tag 必须是同值纯数字**（`check_version` 对 `tag_name` 做 `int()`，`vX.Y.Z` 形态的标签会被直接跳过）。例外是 3.14 预览 Release 用 `py314-<LOCAL_VERSION>` 这种非纯数字 tag——正因非数字才被更新检查跳过，详见「构建」一节。
 - `VERSION_NAME`：展示名 `vX.Y.Z`，界面/日志统一显示为 `VERSION_NAME (LOCAL_VERSION)`。
 
 **五个同步点**
@@ -445,7 +445,7 @@ ASIN 数据库（Excel `amazon_asin_database.xlsx`），搜索到的 ASIN 与番
 1. 在 `docs/changelog.md` 顶部新建目标版本段并写条目；已发版旧段保留，未发版段被后续议题取代时合并重写成最终形态。
 2. `uv run bump --version <YYYYMMDD> --name X.Y.Z` 同步五处（`--dry-run` 预览、`--force` 免交互；`--name` 会连带同步 `uv.lock` 根包版本）；只校验用 `uv run bump --check`。
 3. 复核 `uv run pytest tests/test_version_consistency.py tests/test_version_metadata.py`。
-4. 打**纯数字** tag（= `LOCAL_VERSION`）触发 `release.yml`。「已发版」的判据是数字 tag 已推送，而非 changelog 有没有该段。
+4. 打**纯数字** tag（= `LOCAL_VERSION`）触发 `release.yml`。「已发版」的判据是数字 tag 已推送，而非 changelog 有没有该段。3.14 预览不需要打 tag，`build-py314.yml` 手动触发时自己建 `py314-` tag。
 
 版本号归属维护者，不擅自开新段。`scripts/build.py` 与主窗口不留版本常量：build 从 `consts.py` 读 `LOCAL_VERSION`（`--version` 可覆盖），界面统一展示 `VERSION_NAME (LOCAL_VERSION)`。
 
@@ -460,7 +460,22 @@ uv sync --locked --all-extras --dev
 uv run build --debug
 ```
 
-CI 工作流：`.github/workflows/release.yml` 是发版主流程（Python 3.13，tag `2*` 触发并创建 Release）；`.github/workflows/build-py314.yml` 是 Python 3.14 兼容性构建（`workflow_dispatch` + main 推送触发），只上传 `py314-*` 产物、**不创建 Release**、不改 `release.yml`，`build-app` 带 `continue-on-error` 以免 3.14 依赖生态未就绪时阻塞主干。全平台确认可编译后，才把 `release.yml` 的 `python-version` 切到 3.14 并删除该文件。
+CI 工作流有两个，共用同一套四平台矩阵（macOS ARM64 / macOS Intel / Windows x86_64 / Linux x86_64）：
+
+- `.github/workflows/release.yml`：**3.13 正式发版主流程**（tag `2*` 触发），创建 tag 为纯数字 `LOCAL_VERSION` 的正式 Release，资产名 `MDCx-<版本>-<平台>-<架构>-<sha>`。客户端自动更新只看这个 Release，别动它。
+- `.github/workflows/build-py314.yml`：**3.14 发版流程**（`workflow_dispatch` + main 推送触发）。推送只构建；手动触发且勾选 `publish` 时额外发一条 **3.14 预览 Release**：tag 为 `py314-<版本号>`（非纯数字），资产名多一段 `-py314-`。
+
+两个流程并存的关键约定，改动时务必守住：
+
+1. **tag 命名空间隔离**：`check_version()` 遍历 releases、取第一个 `tag_name.isdigit()` 的值（`mdcx/base/web.py`），所以 `py314-<版本>` 这种非纯数字 tag 会被跳过，3.14 预览对客户端自动更新不可见，两个流程可以共用同一个版本号。
+2. **不发 Latest**：预览 Release 固定 `make_latest: false`，仓库的 Latest 永远是 3.13 正式版，文档里的 `/releases/latest/download/` 链接不会被指到预览包。
+3. **只允许手动发版**：`publish-release` 要求 `workflow_dispatch` + `publish` 勾选。否则每次推送 main 都会抢同一个 `py314-<版本>` tag，官方 tag 推送时两边同时 `POST /releases` 撞 422，把 3.13 正式发版撞挂。
+4. **缺产物不发版**：`build-app` 带 `continue-on-error`，`publish-release` 用 `if: !cancelled() && needs.build-app.result == 'success'` 把关（不能写 `success()`：`needs` 里任一失败腿都会让它整体跳过），并在上传前核对四个平台产物齐全——半成品 Release 比不发更糟。只构建单个平台时请取消勾选 `publish`。
+5. **预览会占用更新检查窗口**：`check_version` 只请求 `per_page=10` 条 releases。发新的 3.14 预览前，先把上一条 `py314-*` Release 与 tag 删掉，别攒够 10 条把正式 Release 挤出窗口。
+6. **资产隔离**：workflow 产物名用 `py314-*`、Release 资产名用 `-py314-` 段，与 3.13 的 `mdcx-*` / 无该段完全不撞名。
+
+上述六条由 `tests/test_py314_release_workflow.py` 守住（纯文本断言，不引入 yaml 依赖），改这两个工作流后请一并跑 `uv run pytest tests/test_sr_bundling.py tests/test_py314_release_workflow.py`。
+
 
 依赖版本下限按 Python 3.14 抬过三处，改依赖时务必守住（否则 3.14 流水线的 `uv sync --locked` 会硬失败）：
 
