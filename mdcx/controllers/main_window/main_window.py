@@ -930,14 +930,35 @@ class MyMAinWindow(QMainWindow):
         ui.label_thumb_size.setGeometry(
             int(222 * cover_scale), cover_bottom, int(201 * cover_scale), int(40 * cover_scale)
         )
-        ui.checkBox_cover.move(490, cover_bottom)
+        thumb_right = int(580 * cover_scale)
+        # 软件界面最大化时：编辑 NFO/打开文件夹/播放/右键菜单四个按钮整体右移到
+        # 缩略图右边界（右缘对齐 thumb_right，组内相对位置与间距不变）；显示封面
+        # 勾选框右缘同样对齐到缩略图右边界。非最大化时恢复设计坐标，保持原布局不变。
+        if _maxed:
+            # 按缩略图实际右缘对齐（x+w），避免 int(252*s)+int(328*s) 与 int(580*s)
+            # 分开取整时的 1px 偏差
+            _align_right = ui.label_thumb.x() + ui.label_thumb.width()
+            _rx = _align_right - ui.pushButton_right_menu.width()
+            _px = _rx - ui.pushButton_play.width()
+            _fx = _px - ui.pushButton_open_folder.width()
+            _nx = _fx - ui.pushButton_open_nfo.width()
+            ui.pushButton_right_menu.move(_rx, 110)
+            ui.pushButton_play.move(_px, 110)
+            ui.pushButton_open_folder.move(_fx, 110)
+            ui.pushButton_open_nfo.move(_nx, 110)
+            ui.checkBox_cover.move(_align_right - ui.checkBox_cover.width(), cover_bottom)
+        else:
+            ui.pushButton_open_nfo.move(427, 110)
+            ui.pushButton_open_folder.move(467, 110)
+            ui.pushButton_play.move(507, 110)
+            ui.pushButton_right_menu.move(547, 110)
+            ui.checkBox_cover.move(490, cover_bottom)
         # 信息区各控件：左列标签锚定设计 x=30（与「番号/标题/封面」对齐），y 统一下移
         # info_delta；下划线/值列按 cover_scale 等比例加长（议题 #141）：
         #   · 简介/标签（设计 x=70、宽 500）与右列时长/系列/发行（设计 x=350）的下划线
         #     右缘延伸到「缩略图框右缘」thumb_right = 580×scale；
         #   · 左列窄字段（日期/导演/制作，设计宽 220）宽度按 ×scale 加长；
         #   · 右列整体按 ×scale 右移，避免与加长后的左列窄字段重叠。
-        thumb_right = int(580 * cover_scale)
         # 左列标签（x 固定，保持与番号/标题/封面竖向对齐）
         # 简介/标签两行标签与其值行同顶（#154 行高恒定），其余行用 info_grow
         ui.label_18.move(30, 430 + info_delta)
