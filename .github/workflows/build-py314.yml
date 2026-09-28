@@ -1,21 +1,20 @@
 name: Build and Release with Python3.14
 
-# Python 3.14 发版流程，与 release.yml（3.13 正式发版）并存、互不干扰：
-# - 资产名与 tag 都加 py314- 前缀：tag 固定为 py314-<版本号>，而 release.yml 用纯数字 tag。
-#   mdcx/base/web.py 的 check_version 逐个 release 取 tag_name 做 int()，非纯数字 tag 会被
-#   跳过，所以 py314 Release 对客户端自动更新不可见，两个工作流可以共用同一版本号。
-# - **只允许手动触发时发 Release**（workflow_dispatch + publish 勾选，push 事件自动不发）：
-#   否则每次 push main 都会抢同一个 py314-<版本号> tag，官方 tag 推送时两边 POST /releases
-#   撞 422，直接把 3.13 正式发版撞挂。
-# - make_latest: false：预览包绝不抢仓库「Latest」标记，文档里的 latest/download 链接继续指向 3.13 正式版。
-# - 唯一残留影响：预览 Release 同样会占用 check_version 的 releases API 窗口（per_page=10），
-#   所以别攒一堆 py314 tag —— 每次发新的 3.14 预览前，把上一条 py314- Release 与 tag 删掉。
-# - build-app 带 continue-on-error：3.14 依赖生态若翻车，只有该平台那一个 Release 上传步骤被跳过，
-#   3.13 发版不受影响；publish-release 再用 needs.build-app.result == 'success' 把关，
-#   缺任何一个平台产物就整个不发，不留半成品 Release。
+# Python 3.14 发版流程，与 `release.yml`（Python 3.13 正式发版）逐步骤对齐，
+# 只有四处差异：python-version 3.14、UV_PYTHON 锁 3.14、构建前断言解释器确实是 3.14、
+# `uv sync --locked` 失败时自动回退重新解析依赖。
 #
-# 与 release.yml 的差异仅四处：python-version 3.14、UV_PYTHON 锁定 3.14、
-# uv sync 失败可选回退重新解析、tag 与资产名加 py314 前缀（+ 发版限手动触发）。
+# tag 同样取 `mdcx/consts.py` 的 LOCAL_VERSION（纯数字 YYYYMMDD），资产名同样是
+# `MDCx-<版本>-<平台>-<架构>-<sha>`：也就是说同一版本号只会有一条 Release，两个工作流
+# 不会各发一条。所以**同一个版本号只能用其中一个流程发版**——本文件只监听
+# `workflow_dispatch`，纯数字 tag 的推送仍然只触发 `release.yml`，两者同时发会撞 422。
+#
+# 3.14 全平台转正后，把 `release.yml` 切到 3.14 并删掉本文件即可（届时本文件与
+# release.yml 只剩 python-version / UV_PYTHON / 断言 / relock 回退四处差异）。
+#
+# 另有两处比 `release.yml` 更严的发版护栏（发半成品 Release 比不发更糟）：
+# `build-app` 带 continue-on-error，`publish-release` 用 `needs.build-app.result` 把关，
+# 并在上传前核对四平台产物齐全。
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -30,47 +29,20 @@ permissions:
 on:
   workflow_dispatch:
     inputs:
-      platforms:
-        description: "构建平台"
-        required: false
-        default: "all"
-        type: choice
-        options:
-          - all
-          - windows
-          - macos
-          - linux
-      version:
-        description: "版本号（留空则取 mdcx/consts.py 的 LOCAL_VERSION）"
+      tag:
+        description: "版本号 / Tag（留空则自动取 consts.py 的 LOCAL_VERSION，必须为纯数字；也可手动填写）"
         required: false
         default: ""
-      publish:
-        description: "发 3.14 预览 Release（tag = py314-<版本号>，不影响 release.yml 的纯数字 tag 与自动更新；3.14 全平台转正后把 release.yml 切到 3.14、删掉本文件，届时这个开关一并去掉）"
+      prerelease:
+        description: "是否作为预发布（pre-release）"
         required: false
-        default: true
-        # 用 checkbox 而非 choice：语义就是「这次要不要发」。
-        # push 事件下 inputs.publish 为 null，publish-release 的 if 里已用
-        # github.event_name == 'workflow_dispatch' 挡住，不会被自动构建发版。
-        type: boolean
-      allow_relock:
-        description: "uv sync --locked 失败时允许重新解析依赖（uv.lock 缺 cp314 wheel 时需要）"
-        required: false
-        default: "true"
-        # 用字符串选项而非 boolean：push 事件下 inputs 为空串，boolean 比较会被
-        # GitHub 的宽松相等（''→0、false→0）误判成 false 而关掉回退。
-        type: choice
-        options:
-          - "true"
-          - "false"
-  push:
-    branches:
-      - main
+        default: "false"
 
 concurrency:
+  # 手动触发为主：同一分支的多个 run 排队执行，不取消正在构建/上传的 run
+  # （半路取消会留下缺资产的 Release）。
   group: build-py314-${{ github.ref }}
-  # 只有 push 自动构建才取消旧 run；手动触发可能正在上传 Release 资产，
-  # 中途取消会留下缺资产的 py314 Release。
-  cancel-in-progress: ${{ github.event_name == 'push' }}
+  cancel-in-progress: false
 
 jobs:
   init-matrix:
@@ -78,33 +50,20 @@ jobs:
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
+      # https://github.com/actions/runner/issues/1985#issuecomment-1573518052
       - name: Set matrix
         id: set-matrix
-        shell: bash
-        # push 事件下 inputs 为空串，回落全平台
-        env:
-          PLATFORMS: ${{ inputs.platforms || 'all' }}
         run: |
           items=()
 
-          # 与 release.yml 同一套 runner 组合，https://github.com/actions/runner/issues/1985
-          if [ "$PLATFORMS" = "all" ] || [ "$PLATFORMS" = "macos" ]; then
-            items+=('{"build": "macos", "os": "macos-latest", "arch": "aarch64"}')
-            items+=('{"build": "macos", "os": "macos-15-intel", "arch": "x86_64"}')
-          fi
-          if [ "$PLATFORMS" = "all" ] || [ "$PLATFORMS" = "windows" ]; then
-            items+=('{"build": "windows", "os": "windows-2025", "arch": "x86_64"}')
-          fi
-          if [ "$PLATFORMS" = "all" ] || [ "$PLATFORMS" = "linux" ]; then
-            items+=('{"build": "linux", "os": "ubuntu-latest", "arch": "x86_64"}')
-          fi
+          # https://docs.github.com/en/actions/using-github-hosted-runners/about-github-hosted-runners/about-github-hosted-runners
 
-          if [ "${#items[@]}" -eq 0 ]; then
-            echo "::error::没有匹配的平台：'$PLATFORMS'（可选 all / windows / macos / linux）"
-            exit 1
-          fi
+          items+=('{"build": "macos", "os": "macos-latest", "arch": "aarch64"}')
+          items+=('{"build": "macos", "os": "macos-15-intel", "arch": "x86_64"}')
+          items+=('{"build": "windows", "os": "windows-2025", "arch": "x86_64"}')
+          items+=('{"build": "linux", "os": "ubuntu-latest", "arch": "x86_64"}')
 
-          # 合并 items 到 json 数组
+          # 合并items到json数组
           matrix="matrix=["
           for ((i=0; i<${#items[@]}; i++)); do
             matrix+=" ${items[i]}"
@@ -114,51 +73,52 @@ jobs:
           done
           matrix+="]"
 
-          echo "$matrix" >> "$GITHUB_OUTPUT"
+          # 输出matrix到GITHUB_OUTPUT
+          echo $matrix >> $GITHUB_OUTPUT
 
   build-app:
     needs: init-matrix
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
-    # 3.14 已在全平台构建通过，但保留 continue-on-error：某个平台 runner/依赖突然翻车时
-    # 不阻塞主干，且 publish-release 会因 needs.build-app.result != 'success' 而跳过发版，
-    # 不会把残缺产物发成 Release。
+    # 某个平台 runner/依赖突然翻车时不阻塞其余平台，且 publish-release 会因
+    # needs.build-app.result != 'success' 而跳过发版，不会把残缺产物发成 Release。
     continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJson(needs.init-matrix.outputs.matrix) }}
+        include: ${{fromJson(needs.init-matrix.outputs.matrix)}}
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          fetch-tags: true
           ref: ${{ github.ref }}
 
-      - name: Resolve version
-        id: ver
+      - name: Resolve release tag
+        id: release-tag
         shell: bash
         env:
-          DISPATCH_VERSION: ${{ inputs.version }}
-          REF_NAME: ${{ github.ref_name }}
+          DISPATCH_TAG: ${{ inputs.tag }}
+          REF_TAG: ${{ github.ref_name }}
         run: |
-          version="$DISPATCH_VERSION"
-          if [ -z "$version" ] && [ -n "$REF_NAME" ] && [ "$REF_NAME" != "main" ]; then
-            version="$REF_NAME"
-          fi
-          if [ -z "$version" ]; then
-            version=$(grep -oE 'LOCAL_VERSION[[:space:]]*=[[:space:]]*[0-9]+' mdcx/consts.py | grep -oE '[0-9]+')
+          tag="$DISPATCH_TAG"
+          if [ -z "$tag" ] && [ -n "$REF_TAG" ] && [ "$REF_TAG" != "main" ]; then tag="$REF_TAG"; fi
+          # 手动触发且没有事件版本时，取 consts.py 的 LOCAL_VERSION。
+          if [ -z "$tag" ]; then
+            tag=$(grep -oE 'LOCAL_VERSION[[:space:]]*=[[:space:]]*[0-9]+' mdcx/consts.py | grep -oE '[0-9]+')
           fi
 
-          # 与 release.yml 同约束：版本号必须纯数字（check_version 对 tag_name 做 int()）
-          if ! [[ "$version" =~ ^[0-9]+$ ]]; then
-            echo "::error::版本号必须是纯数字 YYYYMMDD，当前为 '$version'。请检查 mdcx/consts.py 的 LOCAL_VERSION 或手动输入。"
+          # 与 release.yml 同约束：tag 必须是纯数字(供 check_version 的 int(tag_name) 使用),
+          # 非数字(如 v2.0.0)会导致自动更新永久失效。手动填错直接报错退出, 避免建出破坏性 release。
+          if ! [[ "$tag" =~ ^[0-9]+$ ]]; then
+            echo "::error::Release tag 必须是纯数字 YYYYMMDD（供 check_version 的 int(tag) 使用）, 当前为 '$tag'。请检查 mdcx/consts.py 的 LOCAL_VERSION 或手动输入。"
             exit 1
           fi
 
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
-      - name: Set up Python 3.14
+      - name: "Set up Python 3.14"
         uses: actions/setup-python@v7
         with:
           python-version: "3.14"
@@ -185,29 +145,20 @@ jobs:
           libxcb-cursor0 libxcb-xinerama0 libxcb-icccm4 libxcb-image0
           libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0
 
+      # 3.14 唯一比 release.yml 多的一步：`uv.lock` 未必有 cp314 wheel，`--locked` 会硬失败，
+      # 故失败时自动回退重新解析（只影响本次 CI 的临时工作树，检出为干净树，不改仓库 uv.lock）。
+      # 写死版本若无 cp314 wheel 仍会失败——那属于需要升级依赖的硬阻塞
+      # （见 tests/test_py314_dependency_floors.py）。
       - name: Install locked dependencies
         shell: bash
-        env:
-          # push 事件无 inputs（空串）→ 视为允许回退；手动触发按输入走
-          ALLOW_RELOCK: ${{ inputs.allow_relock != 'false' }}
         run: |
-          set +e
-          uv sync --locked --all-extras --dev
-          status=$?
-          set -e
-
-          if [ "$status" -ne 0 ]; then
-            if [ "$ALLOW_RELOCK" != "true" ]; then
-              echo "::error::uv sync --locked 在 Python 3.14 下失败（allow_relock=false）。多半是 uv.lock 里没有 cp314 的 wheel/sdist：本地跑 uv lock 后提交即可。"
-              exit "$status"
-            fi
-            # 允许重新解析只影响本次 CI 的临时工作树（检出为干净树，产物不覆盖锁文件）。
+          if ! uv sync --locked --all-extras --dev; then
             echo "::warning::uv sync --locked 在 Python 3.14 下失败，回退到重新解析依赖。opencv-contrib-python-headless 等写死版本若无 cp314 wheel，仍会失败——那属于需要升级依赖的硬阻塞。"
             uv sync --all-extras --dev
           fi
 
       # 超分工具一体包：Windows/Linux 打包期内嵌（macOS 不内嵌，保持首次使用按需下载）。
-      # 顺序不可调换——build.py 缺工具直接 BuildError（tests/test_sr_bundling.py 锁定此约束）。
+      # 缓存由 update-sr-tools.yml 定期刷新；命中时 fetch 脚本幂等跳过下载，未命中则直接拉取。
       - name: Restore SR tools cache (Windows/Linux)
         if: ${{ matrix.build == 'windows' || matrix.build == 'linux' }}
         uses: actions/cache@v4
@@ -225,67 +176,85 @@ jobs:
       - name: Build macOS app - macOS
         if: ${{ matrix.build == 'macos' }}
         run: |
-          uv run scripts/build.py --create-dmg --version "${{ steps.ver.outputs.version }}" --debug
+          version="${{ steps.release-tag.outputs.tag }}"
+          uv run scripts/build.py --create-dmg --version "$version" --debug
           mv dist/MDCx.dmg "dist/MDCx-${{ matrix.arch }}.dmg"
 
       - name: Build Windows app - Windows
         if: ${{ matrix.build == 'windows' }}
         env:
           PYTHONIOENCODING: utf-8
-        run: uv run scripts/build.py --version "${{ steps.ver.outputs.version }}" --debug
+        run: uv run scripts/build.py --version "${{ steps.release-tag.outputs.tag }}" --debug
 
       - name: Build Linux app - Linux
         if: ${{ matrix.build == 'linux' }}
         env:
           PYTHONIOENCODING: utf-8
-        run: uv run scripts/build.py --version "${{ steps.ver.outputs.version }}" --debug
+        run: uv run scripts/build.py --version "${{ steps.release-tag.outputs.tag }}" --debug
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v7
         if: ${{ matrix.build == 'macos' }}
         with:
-          name: py314-macos-${{ matrix.arch }}
+          name: mdcx-macos-${{ matrix.arch }}
           path: dist/MDCx-${{ matrix.arch }}.dmg
+
+      - name: Pre-check Windows artifact for release upload
+        if: ${{ matrix.build == 'windows' }}
+        shell: pwsh
+        run: |
+          $releaseTag = "${{ steps.release-tag.outputs.tag }}"
+          $platform = "${{ matrix.build }}"
+          $arch = "${{ matrix.arch }}"
+          $sha = "${{ github.sha }}"
+          $artifactPath = "dist/MDCx.exe"
+          $expectedAssetName = "MDCx-${releaseTag}-${platform}-${arch}-${sha}.exe"
+
+          Write-Host "检查发布产物：$artifactPath"
+          Write-Host "计划发布文件名：$expectedAssetName"
+
+          if (-not (Test-Path -LiteralPath $artifactPath)) {
+            throw "发布产物缺失：$artifactPath，请先确认构建成功"
+          }
+
+          if ((Get-Item -LiteralPath $artifactPath).Length -le 0) {
+            throw "发布产物为空文件：$artifactPath"
+          }
+
+          if ([string]::IsNullOrWhiteSpace($releaseTag)) {
+            throw "发布 Tag 为空，无法确认上传文件名规则"
+          }
+
+          if ([string]::IsNullOrWhiteSpace($platform) -or [string]::IsNullOrWhiteSpace($arch)) {
+            throw "发布平台/架构信息缺失，无法确认上传文件名规则"
+          }
+
+          $artifactSizeBytes = (Get-Item -LiteralPath $artifactPath).Length
+          if ($artifactSizeBytes -lt 1048576) {
+            Write-Warning "产物文件较小，可能异常：$artifactPath size=${artifactSizeBytes} bytes。请确认构建输出是否完整。"
+          }
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v7
         if: ${{ matrix.build == 'windows' }}
         with:
-          name: py314-windows-${{ matrix.arch }}
+          name: mdcx-windows-${{ matrix.arch }}
           path: dist/MDCx.exe
 
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v7
         if: ${{ matrix.build == 'linux' }}
         with:
-          name: py314-linux-${{ matrix.arch }}
+          name: mdcx-linux-${{ matrix.arch }}
           path: dist/MDCx
 
-      - name: Summary
-        if: ${{ always() }}
-        shell: bash
-        run: |
-          {
-            echo "### Python 3.14 构建：${{ matrix.build }}-${{ matrix.arch }}"
-            echo ""
-            printf -- '- 解释器：`%s`\n' "$(python -V 2>&1)"
-            printf -- '- 版本号：`%s`\n' "${{ steps.ver.outputs.version }}"
-            printf -- '- 结果：%s\n' "${{ job.status }}"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  # 发 3.14 预览 Release。assets 用 -py314-<platform>- 段与 release.yml 的正式资产区分，
-  # tag 用 py314-<版本号>，对 check_version 的 int(tag) 不可见。
   publish-release:
     needs: build-app
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    # 门禁三条，缺一不可：
-    # 1) !cancelled() + needs.build-app.result == 'success'——build-app 开了 continue-on-error，
-    #    直接写 `if: success()` 会被 needs 里任一失败腿整体跳过（relock 没配好时最常见）；
-    #    用 !cancelled() 而非 always()，run 被取消时不再白跑一轮发版。
-    # 2) 手动触发才发——push 自动构建不得抢 py314 tag。
-    # 3) publish 勾选——单平台试编、只想要产物不想发版时用它。
-    if: ${{ !cancelled() && needs.build-app.result == 'success' && github.event_name == 'workflow_dispatch' && inputs.publish == true }}
+    # 门禁两条：!cancelled() 而非 always()，run 被取消时不再白跑一轮发版；
+    # needs.build-app.result == 'success' 核对 build-app 的真实结果（build-app 开了
+    # continue-on-error，不能写 `success()`：`needs` 里任一失败腿都会让它整体跳过）。
+    if: ${{ !cancelled() && needs.build-app.result == 'success' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -296,39 +265,42 @@ jobs:
         id: metadata
         shell: bash
         env:
-          DISPATCH_VERSION: ${{ inputs.version }}
-          REF_NAME: ${{ github.ref_name }}
+          DISPATCH_TAG: ${{ inputs.tag }}
+          REF_TAG: ${{ github.ref_name }}
+          DISPATCH_PRERELEASE: ${{ inputs.prerelease }}
         run: |
-          version="$DISPATCH_VERSION"
-          if [ -z "$version" ] && [ -n "$REF_NAME" ] && [ "$REF_NAME" != "main" ]; then
-            version="$REF_NAME"
+          tag="$DISPATCH_TAG"
+          if [ -z "$tag" ] && [ -n "$REF_TAG" ] && [ "$REF_TAG" != "main" ]; then tag="$REF_TAG"; fi
+          if [ -z "$tag" ]; then
+            tag=$(grep -oE 'LOCAL_VERSION[[:space:]]*=[[:space:]]*[0-9]+' mdcx/consts.py | grep -oE '[0-9]+')
           fi
-          if [ -z "$version" ]; then
-            version=$(grep -oE 'LOCAL_VERSION[[:space:]]*=[[:space:]]*[0-9]+' mdcx/consts.py | grep -oE '[0-9]+')
-          fi
-          # 与 release.yml 同约束：纯数字 YYYYMMDD（check_version 对 tag_name 做 int()）
-          if ! [[ "$version" =~ ^[0-9]+$ ]]; then
-            echo "::error::版本号必须是纯数字 YYYYMMDD，当前为 '$version'。"
+          if ! [[ "$tag" =~ ^[0-9]+$ ]]; then
+            echo "::error::Release tag 必须是纯数字，当前为 '$tag'。"
             exit 1
           fi
 
-          # 官方 tag 已存在 = 这个版本号的 3.13 正式版已发过。不阻断（同一版本号发 3.14 预览
-          # 是常规操作，且 py314 tag 与官方 tag 不同名、不会互相覆盖），只提示避免误判。
-          if git ls-remote --exit-code --tags origin "refs/tags/$version" >/dev/null 2>&1; then
-            echo "::warning::官方 tag '$version' 已存在，本次只发 3.14 预览（tag py314-$version），不动 3.13 正式版。"
+          # 纯数字 tag 与 release.yml 共用命名空间：若 3.13 正式版已发过这个版本号，
+          # 下面的 upload-release-action 会以 overwrite 更新同一条 Release 的资产，
+          # 这里只提示，避免把覆盖当成新建。
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "::warning::tag '$tag' 已存在，本次会更新该 Release（overwrite: true），注意别与 release.yml 对同一版本号并发发版。"
           fi
 
           version_name=$(grep -oE 'VERSION_NAME[[:space:]]*=[[:space:]]*"[^"]+"' mdcx/consts.py | grep -oE '"[^"]+"' | tr -d '"')
           version_name=${version_name:-MDCx}
+          prerelease=false
+          if [ "${{ github.event_name }}" ] = "workflow_dispatch" ] && [ "$DISPATCH_PRERELEASE" = "true" ]; then
+            prerelease=true
+          fi
 
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "tag=py314-$version" >> "$GITHUB_OUTPUT"
-          echo "name=${version_name} 3.14 预览 (py314-${version})" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "name=${version_name} (${tag})" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
 
       - name: Download build artifacts
         uses: actions/download-artifact@v8
         with:
-          pattern: py314-*
+          pattern: mdcx-*
           path: dist
           merge-multiple: true
 
@@ -342,7 +314,7 @@ jobs:
           [ -s dist/MDCx.exe ] || missing+=("dist/MDCx.exe")
           [ -s dist/MDCx ] || missing+=("dist/MDCx")
           if [ ${#missing[@]} -gt 0 ]; then
-            echo "::error::产物缺失或为空：${missing[*]}。不发半成品 Release。若本次只构建了单个平台，请在触发时取消勾选 publish。"
+            echo "::error::产物缺失或为空：${missing[*]}。不发半成品 Release。"
             exit 1
           fi
           ls -l dist
@@ -360,81 +332,53 @@ jobs:
             echo "::error::changelog 中缺少 ${version_name} 区段。"
             exit 1
           fi
-          # 反引号必须走单引号 printf：双引号里 bash 会当命令替换执行。
           delimiter="__MDCX_CHANGELOG_EOF__"
           {
             echo "CHANGELOG<<$delimiter"
-            printf -- '**Python 3.14 预览版**（tag `py314-%s`）\n\n' "${{ steps.metadata.outputs.version }}"
-            printf -- '> 本包用于验证 3.14 可用性，**不是**自动更新的目标版本：仓库 Latest 仍是 3.13 正式版（tag `%s`），check_version 只认纯数字 tag。\n\n' "${{ steps.metadata.outputs.version }}"
             awk -v version="${version_name}" '$0 ~ "^## " version "( |$)" {found=1; print; next} found && /^## / {exit} found {print}' docs/changelog.md
             echo "$delimiter"
           } >> "$GITHUB_OUTPUT"
 
-      # target_commit / make_latest 都显式写死：tag 指向本次 commit，且永不抢 Latest 标记。
-      # check_duplicates 默认 true，资产名带 github.sha，同一 commit 重跑不会重复上传。
       - name: Create Release - macOS (Apple Silicon)
         uses: svenstaro/upload-release-action@v2
         with:
           overwrite: true
-          make_latest: false
-          prerelease: false
           release_name: ${{ steps.metadata.outputs.name }}
-          asset_name: MDCx-${{ steps.metadata.outputs.version }}-py314-macos-aarch64-${{ github.sha }}.dmg
+          asset_name: MDCx-${{ steps.metadata.outputs.tag }}-macos-aarch64-${{ github.sha }}.dmg
           file: dist/MDCx-aarch64.dmg
+          prerelease: ${{ steps.metadata.outputs.prerelease }}
           body: ${{ steps.changelog.outputs.CHANGELOG }}
           tag: ${{ steps.metadata.outputs.tag }}
-          target_commit: ${{ github.sha }}
 
       - name: Create Release - macOS (Intel)
         uses: svenstaro/upload-release-action@v2
         with:
           overwrite: true
-          make_latest: false
-          prerelease: false
           release_name: ${{ steps.metadata.outputs.name }}
-          asset_name: MDCx-${{ steps.metadata.outputs.version }}-py314-macos-x86_64-${{ github.sha }}.dmg
+          asset_name: MDCx-${{ steps.metadata.outputs.tag }}-macos-x86_64-${{ github.sha }}.dmg
           file: dist/MDCx-x86_64.dmg
+          prerelease: ${{ steps.metadata.outputs.prerelease }}
           body: ${{ steps.changelog.outputs.CHANGELOG }}
           tag: ${{ steps.metadata.outputs.tag }}
-          target_commit: ${{ github.sha }}
 
       - name: Create Release - Windows
         uses: svenstaro/upload-release-action@v2
         with:
           overwrite: true
-          make_latest: false
-          prerelease: false
           release_name: ${{ steps.metadata.outputs.name }}
-          asset_name: MDCx-${{ steps.metadata.outputs.version }}-py314-windows-x86_64-${{ github.sha }}.exe
+          asset_name: MDCx-${{ steps.metadata.outputs.tag }}-windows-x86_64-${{ github.sha }}.exe
           file: dist/MDCx.exe
+          prerelease: ${{ steps.metadata.outputs.prerelease }}
           body: ${{ steps.changelog.outputs.CHANGELOG }}
           tag: ${{ steps.metadata.outputs.tag }}
-          target_commit: ${{ github.sha }}
 
       - name: Create Release - Linux
         uses: svenstaro/upload-release-action@v2
         with:
           overwrite: true
-          make_latest: false
-          prerelease: false
           release_name: ${{ steps.metadata.outputs.name }}
-          asset_name: MDCx-${{ steps.metadata.outputs.version }}-py314-linux-x86_64-${{ github.sha }}
+          asset_name: MDCx-${{ steps.metadata.outputs.tag }}-linux-x86_64-${{ github.sha }}
           file: dist/MDCx
+          prerelease: ${{ steps.metadata.outputs.prerelease }}
           body: ${{ steps.changelog.outputs.CHANGELOG }}
           tag: ${{ steps.metadata.outputs.tag }}
-          target_commit: ${{ github.sha }}
-
-      - name: Summary
-        if: ${{ always() }}
-        shell: bash
-        run: |
-          {
-            echo "### Python 3.14 预览 Release"
-            echo ""
-            printf -- '- tag：`%s`\n' "${{ steps.metadata.outputs.tag }}"
-            printf -- '- 标题：`%s`\n' "${{ steps.metadata.outputs.name }}"
-            printf -- '- 资产：macos-aarch64 / macos-x86_64 / windows-x86_64 / linux-x86_64（均带 -py314- 与 commit sha）'
-            echo ""
-            echo '- 3.13 正式版（纯数字 tag）未受影响；本 Release 未标记为 Latest，客户端自动更新仍指向 3.13。'
-            printf -- '- 结果：%s\n' "${{ job.status }}"
-          } >> "$GITHUB_STEP_SUMMARY"
