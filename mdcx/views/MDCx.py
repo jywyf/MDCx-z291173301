@@ -11762,16 +11762,16 @@ class Ui_MDCx(object):
         self.pushButton_nfo_lib_batch_save.setMinimumSize(QtCore.QSize(0, 36))
         self.pushButton_nfo_lib_batch_save.setObjectName("pushButton_nfo_lib_batch_save")
         self.gridLayout_nfo_lib_batch.addWidget(self.pushButton_nfo_lib_batch_save, 4, 0, 1, 2)
-        self.label_nfo_lib_batch_status = QtWidgets.QLabel(parent=self.groupBox_nfo_lib_batch)
-        self.label_nfo_lib_batch_status.setText("")
-        self.label_nfo_lib_batch_status.setObjectName("label_nfo_lib_batch_status")
-        self.gridLayout_nfo_lib_batch.addWidget(self.label_nfo_lib_batch_status, 5, 0, 1, 2)
         self.label_nfo_lib_batch_hint = QtWidgets.QLabel(parent=self.groupBox_nfo_lib_batch)
         self.label_nfo_lib_batch_hint.setMinimumSize(QtCore.QSize(0, 64))
         self.label_nfo_lib_batch_hint.setStyleSheet("color: rgb(8, 128, 128);")
         self.label_nfo_lib_batch_hint.setWordWrap(True)
         self.label_nfo_lib_batch_hint.setObjectName("label_nfo_lib_batch_hint")
-        self.gridLayout_nfo_lib_batch.addWidget(self.label_nfo_lib_batch_hint, 6, 0, 1, 2)
+        self.gridLayout_nfo_lib_batch.addWidget(self.label_nfo_lib_batch_hint, 5, 0, 1, 2)
+        self.label_nfo_lib_batch_status = QtWidgets.QLabel(parent=self.groupBox_nfo_lib_batch)
+        self.label_nfo_lib_batch_status.setText("")
+        self.label_nfo_lib_batch_status.setObjectName("label_nfo_lib_batch_status")
+        self.gridLayout_nfo_lib_batch.addWidget(self.label_nfo_lib_batch_status, 6, 0, 1, 2)
         self.nfo_lib_list_layout.addWidget(self.groupBox_nfo_lib_batch)
         self.nfo_lib_content_layout.addWidget(self.nfo_lib_list_panel)
         self.scrollArea_nfo_lib_form = CustomScrollArea(parent=self.nfo_lib_content)
@@ -12551,7 +12551,7 @@ class Ui_MDCx(object):
         self.label_41.setText(_translate("MDCx", "刮削排除目录："))
         self.label_8.setText(
             _translate(
-                "MDCx", "移动「待刮削视频目录」中的所有视频和字幕到「待刮削视频目录」下的「Movie_moved」目录下。"
+                "MDCx", "移动「待刮削视频目录」中的所有视频和字幕到「待刮削视频目录」下的「Movie_moved」目录"
             )
         )
         self.groupBox_21.setTitle(
@@ -12576,11 +12576,11 @@ class Ui_MDCx(object):
         )
         self.pushButton_actor_db_translate.setText(_translate("MDCx", "补全中文名"))
         self.pushButton_actor_db_link.setText(_translate("MDCx", "补全 LibreDMM 链接"))
-        self.label_actor_db_translate_desc.setText(_translate("MDCx", "扫描已有 TMDB ID 缺中文名的条目"))
-        self.label_actor_db_link_desc.setText(_translate("MDCx", "扫描已有 TMDB ID 缺链接的条目"))
+        self.label_actor_db_translate_desc.setText(_translate("MDCx", "扫描已有TMDB ID缺少中文名的条目"))
+        self.label_actor_db_link_desc.setText(_translate("MDCx", "扫描已有TMDB ID缺少链接的条目"))
         self.pushButton_actor_db_open.setText(_translate("MDCx", "打开演员数据库"))
         self.pushButton_actor_db_stop.setText(_translate("MDCx", "停止当前维护任务"))
-        self.label_actor_db_open_desc.setText(_translate("MDCx", "用默认程序打开 xlsx 供查看与手工编辑"))
+        self.label_actor_db_open_desc.setText(_translate("MDCx", "用默认程序打开xlsx供查看与编辑"))
         self.label_actor_db_note.setText(
             _translate("MDCx", "提示：补全结果将输出到日志页。所有按钮均防重入，运行中按钮禁用。")
         )
@@ -12593,7 +12593,7 @@ class Ui_MDCx(object):
         )
         self.pushButton_actor_db_fill_minnano.setText(_translate("MDCx", "minnano 补全"))
         self.label_actor_db_fill_minnano_desc.setText(
-            _translate("MDCx", "从 minnano-av 补全缺生日/简介，日文字段自动翻译")
+            _translate("MDCx", "从Minnano-av补全缺少的生日/简介，日文字段自动翻译")
         )
         self.pushButton_actor_db_verify_tmdbid.setToolTip(
             _translate(
@@ -12603,7 +12603,7 @@ class Ui_MDCx(object):
         )
         self.pushButton_actor_db_verify_tmdbid.setText(_translate("MDCx", "校验 tmdbid 有效性"))
         self.label_actor_db_verify_tmdbid_desc.setText(
-            _translate("MDCx", "失效 id 清除后自动按名字重搜补回新 id（搜不到则保持无 id，刮削兜底）")
+            _translate("MDCx", "失效ID清除后自动按名字重搜补新ID，搜不到则保持无ID刮削兜底")
         )
         self.pushButton_actor_db_check.setToolTip(
             _translate(
@@ -12613,7 +12613,7 @@ class Ui_MDCx(object):
         )
         self.pushButton_actor_db_check.setText(_translate("MDCx", "检查用户库"))
         self.label_actor_db_check_desc.setText(
-            _translate("MDCx", "检查格式错误、数据异常，安全项自动修复，tmdb 项给人工修复步骤")
+            _translate("MDCx", "检查格式错误、数据异常，安全项自动修复，TMDB给人工修复步骤")
         )
         self.pushButton_actor_db_fill_zh_javdb.setToolTip(
             _translate(
@@ -12623,7 +12623,7 @@ class Ui_MDCx(object):
         )
         self.pushButton_actor_db_fill_zh_javdb.setText(_translate("MDCx", "JavDB 中文名"))
         self.label_actor_db_fill_zh_javdb_desc.setText(
-            _translate("MDCx", "JavDB 的 name_zht 转简体补全中文名；仅处理「中文==日文原名」的行")
+            _translate("MDCx", "JavDB的name_zht转简体补全中文名；仅处理「中文==日文原名」的行")
         )
         self.lineEdit_actor_db_nfo_dir.setPlaceholderText(_translate("MDCx", "选择 nfo 目录"))
         self.pushButton_actor_db_pick_nfo_dir.setText(_translate("MDCx", "选择目录"))
@@ -12669,7 +12669,7 @@ class Ui_MDCx(object):
         self.label_actor_db_sync_aliases_desc.setText(
             _translate(
                 "MDCx",
-                "来源 TMDB 需配置 API Key；minnano 直接抓取みんなのAV。默认仅补缺别名的行，勾选「全量更新」则并入全部行；用「起始行/限量」可分片续跑",
+                "来源TMDB需配置TMDB API Key；Minnano直接抓取みんなのAV，默认仅补缺别名的行，勾选「全量更新」则并入全部行，用「起始行/限量」可分片续跑",
             )
         )
         self.groupBox_cover_backfill.setTitle(
@@ -12678,7 +12678,7 @@ class Ui_MDCx(object):
         self.label_cover_backfill_desc.setText(
             _translate(
                 "MDCx",
-                "输入番号（多个用空格分隔），将自动刮削并补齐封面和缩略图。复用当前配置的站点优先级、命名、裁切、水印规则。输出目录为当前数据目录（可在设置页修改）。",
+                "输入番号（多个用空格分隔）将自动刮削并补齐封面和缩略图，复用当前配置的站点优先级、命名、裁切、水印规则，输出目录为当前数据目录（可在设置页修改）。",
             )
         )
         self.lineEdit_cover_backfill_numbers.setPlaceholderText(_translate("MDCx", "例如：SSIS-001 ABF-371 JIMMY-003"))
@@ -14081,7 +14081,7 @@ class Ui_MDCx(object):
                 "<h4>十、软件工具页面</h4>\n"
                 " <ul>\n"
                 "  <li><b>NFO 库管理</b>：左侧导航独立页面，浏览和编辑整个 NFO 库。选择目录后递归扫描所有 .nfo 文件生成列表（支持番号/演员/标题筛选）；点列表项读取 NFO 填充 15 字段编辑表单（番号/标题/演员/发行日/年份/时长/导演/片商/发行商/系列/评分/简介/标签/封面URL/海报URL），右侧同步预览本地海报和缩略图，可调起裁剪工具；保存前自动对比改动弹窗确认（字段级 diff），无改动不写盘；批量操作面板支持多选后一键替换演员名、加标签、删标签、统一系列名；列表右键菜单提供重新刮削（找同目录同名视频入队）、打开所在目录、删除 NFO。</li>\n"
-                "  <li><b>演员库维护</b>：直接操作 actor_database.xlsx。补全中文名（按 TMDB ID 补翻译）、补全 LibreDMM 链接、补全别名（可选来源：TMDB、minnano 或 JavDB；默认仅补缺别名的条目，勾选「全量更新」则并入全部行，不覆盖本地已有别名，支持「起始行/限量」分片续跑）、JavDB 中文名（从 JavDB 影片详情页抓取演员中文名，并发拉取影片详情，支持分片续跑与「停止当前维护任务」）、minnano 补全（从 minnano-av 补缺生日/简介，日文字段自动翻译）、检查用户库（扫描格式/结构/数据异常并弹窗报告，安全项可一键自动修复，tmdb 项给人工修复步骤）、打开数据库（用默认程序打开 xlsx 供手工编辑）、剔除男演员（按 TMDB 性别删除男优）、校验 tmdbid 有效性（清除 TMDB 失效 id 并按名字重搜补回）、更新 nfo tmdbid（用本地库新 id 覆盖 nfo 旧 id）。联网工具支持限量分片与「停止当前维护任务」按钮，网络请求自动并发，进度实时显示。</li>\n"
+                "  <li><b>演员库维护</b>：直接操作 actor_database.xlsx。补全中文名（按 TMDB ID 补翻译）、补全 LibreDMM 链接、补全别名（可选来源：TMDB、minnano 或 JavDB；默认仅补缺别名的条目，勾选「全量更新」则并入全部行，不覆盖本地已有别名，支持「起始行/限量」分片续跑）、JavDB 中文名（从 JavDB 影片详情页抓取演员中文名，并发拉取影片详情，支持分片续跑与「停止当前维护任务」）、minnano 补全（从 minnano-av 补缺生日/简介，日文字段自动翻译）、检查用户库（扫描格式/结构/数据异常并弹窗报告，安全项可一键自动修复，TMDB给人工修复步骤）、打开数据库（用默认程序打开xlsx供查看与编辑）、剔除男演员（按 TMDB 性别删除男优）、校验 tmdbid 有效性（清除 TMDB 失效 id 并按名字重搜补回）、更新 nfo tmdbid（用本地库新 id 覆盖 nfo 旧 id）。联网工具支持限量分片与「停止当前维护任务」按钮，网络请求自动并发，进度实时显示。</li>\n"
                 "  <li><b>刮削缓存管理</b>：在「软件工具」页刮削缓存面板可查看断点续刮缓存状态（已完成/失败/总数），支持刷新缓存统计、导出缓存数据、重置缓存（清除全部已完成标记，下次全量重刮）、清空缓存（删除 scrape_state.db 文件）。适合在断点续刮数据异常或需要重新全量刮削时使用。</li>\n"
                 "  <li><b>Emby/Jellyfin 演员管理器</b>：填写 Emby/Jellyfin 地址和 API 密钥后连接服务器，获取演员列表并按媒体库筛选（可配置只获取演员类型 / 重复去重）；从 Gfriends / graphis.ne.jp / minnano-av / 本地文件夹按可配置优先级匹配头像和背景图（本地文件夹采用预扫描索引，N 次全树遍历降为 1 次），从本地演员库 / 维基百科 / minnano-av / 数据库按可配置优先级匹配简介和出生日期；Gfriends / Graphis / 信息链路已合并为统一函数，按数据源优先级依次尝试；「数据源测试」可逐源验证结果，「设置」可配置数据源优先级与获取过滤；预览后批量同步到服务器（支持仅补缺失或强制重新获取，同步完成后自动刷新列表），双击演员行打开详情编辑对话框，可编辑简介 / 信息并单独同步头像 / 简介；头像缓存持久化到 userdata/emby_actor_cache/ 目录（不再随临时目录清理丢失），「清空缓存文件夹」可一键清理。</li>\n"
                 " <li><b>单文件刮削</b>：指定某个文件的番号网址进行刮削，当存在相同番号时可手工指定。</li>\n"
@@ -14120,7 +14120,7 @@ class Ui_MDCx(object):
         self.label_nfo_lib_count.setText(_translate("MDCx", "共 0 个"))
         self.lineEdit_nfo_lib_filter.setPlaceholderText(_translate("MDCx", "筛选番号/演员/标题..."))
         self.pushButton_nfo_lib_refresh.setText(_translate("MDCx", "刷新"))
-        self.label_nfo_lib_list_title.setText(_translate("MDCx", "NFO 文件列表"))
+        self.label_nfo_lib_list_title.setText(_translate("MDCx", "NFO文件列表"))
         self.pushButton_nfo_lib_select_all.setText(_translate("MDCx", "全选"))
         self.pushButton_nfo_lib_select_none.setText(_translate("MDCx", "全不选"))
         self.listWidget_nfo_lib.setSortingEnabled(True)
@@ -14137,7 +14137,7 @@ class Ui_MDCx(object):
         self.label_nfo_lib_batch_hint.setText(
             _translate(
                 "MDCx",
-                "用法：先在左侧 NFO 列表选中多条记录，再填写内容点对应按钮（替换演员名/加标签/删标签/统一系列名），最后点「批量保存」统一写盘生效。",
+                "用法：先在左侧nfo列表选中多条记录，再填写内容点对应按钮，替换演员名/加标签/删标签/统一系列名，最后点击「批量保存」统一写盘生效。",
             )
         )
         self.label_nfo_lib_number.setText(_translate("MDCx", "番号"))
@@ -14155,7 +14155,7 @@ class Ui_MDCx(object):
         self.label_nfo_lib_tag.setText(_translate("MDCx", "标签"))
         self.label_nfo_lib_cover_url.setText(_translate("MDCx", "封面URL"))
         self.label_nfo_lib_poster_url.setText(_translate("MDCx", "海报URL"))
-        self.pushButton_nfo_lib_save.setText(_translate("MDCx", "保存当前 NFO"))
+        self.pushButton_nfo_lib_save.setText(_translate("MDCx", "保存当前nfo文件"))
         self.label_nfo_lib_poster_preview.setText(_translate("MDCx", "海报预览"))
         self.label_nfo_lib_thumb_preview.setText(_translate("MDCx", "缩略图预览"))
         self.pushButton_nfo_lib_crop.setText(_translate("MDCx", "裁剪封面"))

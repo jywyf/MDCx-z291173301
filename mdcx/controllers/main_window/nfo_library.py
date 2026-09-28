@@ -104,7 +104,7 @@ def pushButton_nfo_library_clicked(self: MyMAinWindow) -> None:
     self.set_left_button_style()
     self.Ui.pushButton_nfo_library.setStyleSheet("font-weight: bold; background-color: rgba(160,160,165,60);")
     if self.Ui.listWidget_nfo_lib.count() == 0:
-        _add_empty_hint(self, "请先选择上方目录加载 NFO")
+        _add_empty_hint(self, "请先选择上方目录加载nfo文件")
     # 议题 #117：休眠页期间窗口缩放不会触发表单高度自适应，切页时补一次
     self._sync_nfo_lib_form_fields()
 
@@ -384,7 +384,7 @@ def on_nfo_lib_save_done(self: MyMAinWindow, nfo_path_str: str) -> None:
 
     def _restore():
         button.setEnabled(True)
-        button.setText("保存当前 NFO")
+        button.setText("保存当前nfo文件")
 
     QTimer.singleShot(1500, _restore)
 

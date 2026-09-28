@@ -73,7 +73,7 @@ class CustomScrollArea(QScrollArea):
 
         默认 72px 是为 page_setting 底部配置浮框带（侵入视口 63px）留的避让空间；
         信息管理表单页没有任何浮框遮挡，同样的余量白白吃掉一行多高度，把
-        「保存当前 NFO」按钮挤出视口、凭空多出垂直滚动条。
+        「保存当前nfo文件」按钮挤出视口、凭空多出垂直滚动条。
         """
         self._content_bottom_margin = margin
 
