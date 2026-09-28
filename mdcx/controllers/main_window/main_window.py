@@ -587,6 +587,15 @@ class MyMAinWindow(QMainWindow):
             if not self._naming_resyncing and a0.width() != self._naming_last_width:
                 self._naming_last_width = a0.width()
                 QTimer.singleShot(0, self._sync_naming_template_section)
+        # 刮削缓存失败列表：表格/视口宽一变就按 4:2:6:3 重分布列宽，保持无横向滚动条。
+        # setColumnWidth 不改变表格自身尺寸，只触发 header 几何变化，不会递归触发此处 Resize，
+        # 故直接同步布局（若用 singleShot 延迟一拍，填入多行致视口收缩后断言时仍是旧列宽）。
+        # 视口 Resize 也要监听：填入多行后垂直滚动条出现会挤窄视口，此时表格尺寸不变。
+        _scrape_tw = getattr(self.Ui, "tableWidget_scrape_cache_failed", None)
+        if _scrape_tw is not None and a1.type() == QEvent.Type.Resize:
+            if a0 is _scrape_tw or a0 is _scrape_tw.viewport():
+                if not getattr(self, "_scrape_cache_layouting", False):
+                    self._layout_scrape_cache_columns()
         return super().eventFilter(a0, a1)
 
     def showEvent(self, a0):
@@ -5179,20 +5188,74 @@ class MyMAinWindow(QMainWindow):
 
     # 检查 fc2ppvdb cookie
     # region 刮削缓存管理
+    # 失败列表加权列宽：文件名/番号/最后错误/时间按 4:2:6:3 分摊视口剩余宽，
+    # 失败次数按内容固定。Qt6 QHeaderView 无 setStretchFactor，Stretch 只能均分，
+    # 故用 Interactive + 手动按权分配，保证番号约旧 2 倍、时间约旧 3 倍且无横向滚动条。
+    _SCRAPE_CACHE_COL_WEIGHTS = {0: 4, 1: 2, 3: 6, 4: 3}
+
     def _apply_scrape_cache_header_modes(self) -> None:
         """议题 #179: 失败列表列宽策略。
 
         旧实现列宽固定 5×130=650（Interactive），表格宽随窗口伸缩而列不动——
         窄窗（用户截图 1032 视口 641）出水平滚动条，宽窗/最大化右侧大片空白。
-        改为文件名/最后错误 Stretch 分摊视口剩余宽、其余三列按内容收缩，
-        列总宽恒等于视口宽，两种现象同时消除。
+        改为文件名/番号/最后错误/时间按 4:2:6:3 加权分摊视口宽、
+        失败次数按内容收缩，列总宽恒等于视口宽，不出横向滚动条。
+        番号约旧 2 倍（多出部分由文件名让出），时间约旧 3 倍（多出部分由最后错误让出）。
         """
-        header = self.Ui.tableWidget_scrape_cache_failed.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        tw = self.Ui.tableWidget_scrape_cache_failed
+        tw.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        header = tw.horizontalHeader()
+        header.setMinimumSectionSize(10)
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Interactive)
+        self._scrape_cache_layouting = False
+        try:
+            tw.installEventFilter(self)
+            tw.viewport().installEventFilter(self)
+        except Exception:
+            pass
+        QTimer.singleShot(0, self._layout_scrape_cache_columns)
+
+    def _layout_scrape_cache_columns(self) -> None:
+        """按权重重分布失败列表列宽，列总宽恒等于视口宽。"""
+        tw = getattr(getattr(self, "Ui", None), "tableWidget_scrape_cache_failed", None)
+        if tw is None:
+            return
+        if getattr(self, "_scrape_cache_layouting", False):
+            return
+        vp = tw.viewport().width()
+        if vp <= 0:
+            return
+        self._scrape_cache_layouting = True
+        try:
+            tw.resizeColumnToContents(2)
+            fixed = tw.columnWidth(2)
+            # 预留 2px 网格线/边框：总宽接近视口时滚动 maximum 仍可能为 1，故按 vp-2 预算分配。
+            budget = max(vp - 2, 0)
+            remaining = budget - fixed
+            if remaining < 0:
+                remaining = 0
+            weights = self._SCRAPE_CACHE_COL_WEIGHTS
+            total = sum(weights.values())
+            w0 = remaining * weights[0] // total
+            w1 = remaining * weights[1] // total
+            w3 = remaining * weights[3] // total
+            w4 = remaining - w0 - w1 - w3
+            tw.setColumnWidth(0, max(w0, 10))
+            tw.setColumnWidth(1, max(w1, 10))
+            tw.setColumnWidth(3, max(w3, 10))
+            tw.setColumnWidth(4, max(w4, 10))
+            # 表格网格线/边框会占 1~2px：实测总宽恰等于视口时滚动 maximum 仍为 1，
+            # 此处按实际列宽回扣溢出，保证 maximum == 0（预算 vp-2，仍满足铺满断言 vp-2）。
+            overflow = sum(tw.columnWidth(c) for c in range(5)) - max(vp - 2, 0)
+            if overflow > 0:
+                tw.setColumnWidth(3, max(10, tw.columnWidth(3) - overflow))
+        finally:
+            self._scrape_cache_layouting = False
 
     def _open_scrape_cache(self) -> ScrapeStateCache | None:
         cache = ScrapeStateCache(resources.u("scrape_state.db"))
@@ -5240,7 +5303,8 @@ class MyMAinWindow(QMainWindow):
                 ),
             )
         # 议题 #179: 原 resizeColumnsToContents()+setColumnWidth(3,260) 与列宽伸缩策略冲突
-        # （长文本会把列总宽撑出视口，实测 sum=1462 必出横向滚动条），列宽交给 header 模式管理。
+        # （长文本会把列总宽撑出视口，实测 sum=1462 必出横向滚动条），列宽按 4:2:6:3 加权分配。
+        self._layout_scrape_cache_columns()
 
     def pushButton_scrape_cache_export_clicked(self) -> None:
         path, _ = QFileDialog.getSaveFileName(self, "导出失败列表", "scrape_failed.csv", "CSV (*.csv)")
