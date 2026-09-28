@@ -465,9 +465,7 @@ def test_gfriends_select_button_yellow_matches_local_library_button():
         assert w is not None, f"{name} 不存在"
         size = w.find("property[@name='minimumSize']/size")
         assert size is not None, f"{name} 缺 minimumSize"
-        assert (size.find("width").text, size.find("height").text) == ("110", "40"), (
-            f"{name} 应为 110x40"
-        )
+        assert (size.find("width").text, size.find("height").text) == ("110", "40"), f"{name} 应为 110x40"
         assert _widget_string_prop(w, "text") == "选择目录", f"{name} 文案应为「选择目录」"
         assert w.find("property[@name='styleSheet']") is None, f"{name} 不应有本地 styleSheet 覆盖"
     py_text = PY_PATH.read_text(encoding="utf-8")

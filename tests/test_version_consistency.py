@@ -50,7 +50,9 @@ def test_uv_lock_root_version_matches_display_name():
     assert uv_lock.exists(), "uv.lock 缺失"
     content = uv_lock.read_text(encoding="utf-8")
     match = re.search(r'(?m)^\[\[package\]\]\nname = "mdcx"\nversion = "([^"]+)"', content)
-    assert match is not None, 'uv.lock 中找不到根包 mdcx 的 version（期望 [[package]] / name = "mdcx" / version = "X.Y.Z" 三行连排）'
+    assert match is not None, (
+        'uv.lock 中找不到根包 mdcx 的 version（期望 [[package]] / name = "mdcx" / version = "X.Y.Z" 三行连排）'
+    )
     display_version = VERSION_NAME.removeprefix("v")
     assert match.group(1) == display_version, (
         f"uv.lock 根包 version={match.group(1)} 与 VERSION_NAME={VERSION_NAME} 不一致；"

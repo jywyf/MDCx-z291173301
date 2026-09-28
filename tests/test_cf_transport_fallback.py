@@ -66,9 +66,7 @@ async def test_request_falls_back_to_bypass_on_transport_failure(monkeypatch):
     client = _make_client()
     calls = _mock_transport_failure(client, monkeypatch)
 
-    response, error = await client.request(
-        "GET", "https://avsex.cc/", retry_count=1, enable_cf_bypass=True
-    )
+    response, error = await client.request("GET", "https://avsex.cc/", retry_count=1, enable_cf_bypass=True)
 
     assert error == ""
     assert response is not None and response.status_code == 200
@@ -80,9 +78,7 @@ async def test_request_fallback_failure_keeps_original_error(monkeypatch):
     client = _make_client()
     calls = _mock_transport_failure(client, monkeypatch, bypass_ok=False)
 
-    response, error = await client.request(
-        "GET", "https://avsex.cc/", retry_count=1, enable_cf_bypass=True
-    )
+    response, error = await client.request("GET", "https://avsex.cc/", retry_count=1, enable_cf_bypass=True)
 
     assert response is None
     assert "失败" in error  # 原始传输错误为主错误，不被 bypass 错误覆盖
@@ -94,9 +90,7 @@ async def test_request_no_fallback_when_bypass_disabled(monkeypatch):
     client = _make_client()
     calls = _mock_transport_failure(client, monkeypatch)
 
-    response, error = await client.request(
-        "GET", "https://avsex.cc/", retry_count=1, enable_cf_bypass=False
-    )
+    response, error = await client.request("GET", "https://avsex.cc/", retry_count=1, enable_cf_bypass=False)
 
     assert response is None
     assert calls["ensure"] == 0 and calls["bypass"] == 0
@@ -114,9 +108,7 @@ async def test_request_no_fallback_when_response_received(monkeypatch):
 
     monkeypatch.setattr(client, "_curl_request", fake_curl_ok)
 
-    response, error = await client.request(
-        "GET", "https://avsex.cc/", retry_count=1, enable_cf_bypass=True
-    )
+    response, error = await client.request("GET", "https://avsex.cc/", retry_count=1, enable_cf_bypass=True)
 
     assert error == "" and response is not None
     assert calls["ensure"] == 0 and calls["bypass"] == 0
@@ -128,9 +120,7 @@ async def test_request_no_fallback_for_post(monkeypatch):
     client = _make_client()
     calls = _mock_transport_failure(client, monkeypatch)
 
-    response, _ = await client.request(
-        "POST", "https://avsex.cc/", retry_count=1, enable_cf_bypass=True
-    )
+    response, _ = await client.request("POST", "https://avsex.cc/", retry_count=1, enable_cf_bypass=True)
 
     assert response is None
     assert calls["bypass"] == 0
@@ -193,9 +183,7 @@ class _TrawlOnlyManager:
 async def test_check_falls_back_to_bypass_on_transport_failure(monkeypatch):
     monkeypatch.setattr("mdcx.core.network_check._manager", lambda: _TrawlOnlyManager())
     client = _CheckTransportFailClient(bypass_ok=True)
-    spec = NetworkCheckSpec(
-        name="avsex", group="刮削站点", url="https://avsex.cc", enable_cf_bypass=True
-    )
+    spec = NetworkCheckSpec(name="avsex", group="刮削站点", url="https://avsex.cc", enable_cf_bypass=True)
 
     result = await run_network_check_item(spec, client=client)
 
@@ -209,9 +197,7 @@ async def test_check_falls_back_to_bypass_on_transport_failure(monkeypatch):
 async def test_check_fallback_failure_keeps_transport_error(monkeypatch):
     monkeypatch.setattr("mdcx.core.network_check._manager", lambda: _TrawlOnlyManager())
     client = _CheckTransportFailClient(bypass_ok=False)
-    spec = NetworkCheckSpec(
-        name="avsex", group="刮削站点", url="https://avsex.cc", enable_cf_bypass=True
-    )
+    spec = NetworkCheckSpec(name="avsex", group="刮削站点", url="https://avsex.cc", enable_cf_bypass=True)
 
     result = await run_network_check_item(spec, client=client)
 

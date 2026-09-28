@@ -180,7 +180,7 @@ def test_asset_names_match_release_workflow():
     for asset_name in expected:
         assert asset_name in text, f"3.14 工作流缺少与 release.yml 一致的资产名：{asset_name}"
         assert asset_name in release, f"release.yml 不再使用该资产名，两个流程已分叉：{asset_name}"
-    assert f"release_name: ${{{{ steps.metadata.outputs.name }}}}" in text, "标题应沿用 metadata 的解析结果"
+    assert "release_name: ${{ steps.metadata.outputs.name }}" in text, "标题应沿用 metadata 的解析结果"
     assert 'echo "name=${version_name} (${tag})" >> "$GITHUB_OUTPUT"' in text, (
         "Release 标题应与 release.yml 相同（`VERSION_NAME (版本号)`）"
     )

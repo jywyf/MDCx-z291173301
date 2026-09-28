@@ -49,7 +49,7 @@ def get_asin_cids(asin: str) -> list[str]:
 
 
 def cid_to_number(cid: str) -> str | None:
-    """cid 解析番号（与生产 DMM cid 结构规律对齐）：系列字母大写 + 3 位数字。
+    r"""cid 解析番号（与生产 DMM cid 结构规律对齐）：系列字母大写 + 3 位数字。
 
     形态 `^(\d*)([a-z]+)(\d+)([a-z]?)$`：可选厂商数字前缀 + 系列 + 数字 + 变体。
     """

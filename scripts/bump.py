@@ -195,7 +195,9 @@ def check_consistency() -> list[str]:
 
     lock_version = get_uv_lock_root_version()
     if lock_version is not None and lock_version != name.removeprefix("v"):
-        issues.append(f"uv.lock 根包 version={lock_version} 与 VERSION_NAME={name} 不一致（CI 的 uv sync --locked 会失败）")
+        issues.append(
+            f"uv.lock 根包 version={lock_version} 与 VERSION_NAME={name} 不一致（CI 的 uv sync --locked 会失败）"
+        )
 
     changelog = get_changelog_file()
     if changelog.exists():

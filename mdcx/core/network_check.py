@@ -1309,7 +1309,9 @@ async def run_network_check(
     # 排队/重试中的项全报"网络客户端已关闭"。租约让旧客户端等本轮结束再关。
     # 外部注入 client（测试/专用）时不碰租约，生命周期归调用方。
     _lease: Any = None
-    run_client = client
+    # 标注 Any 而非让 mypy 从 client 的 "AsyncWebClient | Any | None" 反推：
+    # 下面要动态挂/摘 _bypass_serial_lock（自定义属性，AsyncWebClient 上没有声明）。
+    run_client: Any = client
     if run_client is None:
         _lease = _manager().acquire_computed()
         # 显式走异步协议：整轮 run 的 try/finally 已存在，lease 在 finally 释放，

@@ -3,6 +3,7 @@
 import os
 import subprocess
 from pathlib import Path
+from typing import Any
 
 
 def sync_gfriends(local_path: str) -> tuple[bool, str]:
@@ -24,7 +25,9 @@ def sync_gfriends(local_path: str) -> tuple[bool, str]:
 
     try:
         # Windows 打包(windowed)下抑制 git 弹出的黑色控制台窗口
-        kwargs = {}
+        # 显式标注 dict[str, Any]：空 dict 会被 mypy 推断成 dict[str, int]，
+        # **kwargs 展开后匹配不上 subprocess.run 的任何重载。
+        kwargs: dict[str, Any] = {}
         if os.name == "nt":
             kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined]
         result = subprocess.run(

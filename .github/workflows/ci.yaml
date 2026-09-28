@@ -3,10 +3,11 @@ name: CI/CD Pipeline
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
+# 只在 PR 上跑。push 到 main 不再触发：日常用 GitHub Desktop 直接同步主干，
+# 推送即红只会污染 Actions 列表。质量门禁改为「PR + 本地自检」两道——
+# 推送前跑 uv run quick-check（ruff format/check + mypy）、
+# uv run check --skip-hook-install（再加 pytest + check_thread_safety）。
 on:
-  push:
-    branches:
-      - main
   pull_request:
     branches:
       - main
